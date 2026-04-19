@@ -6,6 +6,45 @@
 
 ---
 
+## Session 2026-04-19 — Logic & UX Bug Sweep
+
+### FIX — Store `updateProduct` was blowing away active filters
+**File:** `src/state/store.ts`
+**Bug:** `updateProduct()` set `filteredProducts: products` (all products, unfiltered). Every time AI enrichment completed for any product, the full unfiltered list was written to state, clearing whatever category/brand/search filter the user had active.
+**Fix:** Removed `filteredProducts` from the `updateProduct` patch. The Dashboard already derives its displayed list via `useMemo(Engine.filterProducts(state.products, ...))`, so the store's `filteredProducts` field only needs to be set on a full import.
+
+### FIX — ProductIntelligenceUI modal shows stale data during AI enrichment
+**File:** `src/ui/features/dashboard/Dashboard.tsx`
+**Bug:** When a user opens a product detail modal and the AI enrichment queue finishes enriching that product, the modal still displays the pre-enrichment state because `selectedProduct` is a snapshot stored in local React state.
+**Fix:** The store subscription callback now checks if the open product was just updated and replaces it with the fresh version from the store in the same tick, with no visible flicker.
+
+### FIX — Enrichment `extractSpecs` only caught `55P` screen size format
+**File:** `src/services/enrichment.ts`
+**Bug:** `upper.match(/(\d{2})P\b/)` matched only `55P`. Products listed as `55"`, `55 POUCES`, `55 POUCES`, `55INCH` all failed to extract a screen size, so the TV builder had no size data to work with.
+**Fix:** Broadened to `/\b(\d{2,3})\s*(?:P\b|"|\s*(?:POUCES?|INCHES?))/`. Added extraction for litres, watts, HP/CV, BTU, and couvert (dishwasher places).
+
+### FIX — TV builder fabricated a `43"` screen size when none was detected
+**File:** `src/services/enrichment.ts`
+**Bug:** `screen_size: (nums.size_or_feux || 43) + '"'` injects a hardcoded default when no size is found in the product name. This manufactures false data that flows into the consensus layer and can appear in the product detail modal with 0.8 confidence.
+**Fix:** TV builder only sets `screen_size` and `resolution` when `nums.size_or_feux` was actually extracted. Similarly, washing machine builder only sets `capacity` when a real KG value exists.
+
+### ADD — ATTR_BUILDERS for refrigerator, freezer, AC, microwave, dishwasher
+**File:** `src/services/enrichment.ts`
+**Bug:** All categories except `tv` and `washing_machine` fell through to `other: () => ({ status: 'Verified', warranty: '24 Months' })`, giving every fridge, AC, and microwave the same two useless attributes.
+**Fix:** Added real builders for `refrigerator` (capacity L, No Frost, Inox finish), `freezer` (capacity, type), `ac` (Split, Inverter, HP, BTU), `microwave` (power W, capacity L), and `dishwasher` (couvert count).
+
+### FIX — Confidence score disconnect between `_meta.score` and `identity.confidenceScore`
+**File:** `src/services/enrichment.ts`
+**Bug:** `calculateScore()` computed a score and wrote it to `p._meta.score`, but never updated `p.identity.confidenceScore`. The Validator and all UI components read `identity.confidenceScore`, which stayed at the initial `0.5` even after full enrichment. Two competing "truth scores" diverged silently.
+**Fix:** After `calculateScore()`, also write the result to `p.identity.confidenceScore`.
+
+### FIX — Missing `beauty` and `hair_dryer` category labels and icons
+**File:** `src/core/product-adapter.ts`
+**Bug:** CATEGORY_PATTERNS maps épilateurs/tondeuses to `beauty` and sèche-cheveux to `hair_dryer`, but `_categoryLabel` and `_categoryIcon` had no entries for either ID. Both rendered as `undefined` in filter pills, category stats, and the legend.
+**Fix:** Added `beauty: 'Beauté & Soin'` / `💅` and `hair_dryer: 'Sèche-Cheveux'` / `💨` to both lookup tables.
+
+---
+
 ## Session 2026-04-19 — CSV Parser Hardening & Scroll Fix
 
 ### FIX [CRITICAL] — `normalizeKey` diacritic removal was completely broken

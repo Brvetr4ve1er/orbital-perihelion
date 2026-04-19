@@ -75,18 +75,54 @@ export const EnrichmentService = {
     } as Record<string, string>,
 
     ATTR_BUILDERS: {
-        tv: (nums: any, flags: any) => ({
-            screen_size: (nums.size_or_feux || 43) + '"',
-            resolution: (nums.size_or_feux || 43) >= 50 ? '4K UHD' : 'FHD',
-            panel_type: flags.qled ? 'QLED' : 'LED',
-            os: flags.smart ? 'Google TV' : 'Sans OS'
-        }),
-        washing_machine: (nums: any) => ({
-            capacity: (nums.capacity_kg || 8) + ' KG',
-            motor: 'Inverter',
-            programs: 15
-        }),
-        other: () => ({ status: 'Verified', warranty: '24 Months' })
+        tv: (nums: any, flags: any) => {
+            const attrs: Record<string, any> = {
+                panel_type: flags.qled ? 'QLED' : 'LED',
+                os: flags.smart ? 'Google TV' : 'Sans OS',
+            };
+            // Only inject screen size if actually detected — never fabricate a default
+            if (nums.size_or_feux) {
+                attrs.screen_size = nums.size_or_feux + '"';
+                attrs.resolution = nums.size_or_feux >= 50 ? '4K UHD' : 'FHD';
+            }
+            return attrs;
+        },
+        washing_machine: (nums: any) => {
+            const attrs: Record<string, any> = { motor: 'Inverter', programs: 15 };
+            if (nums.capacity_kg) attrs.capacity = nums.capacity_kg + ' KG';
+            return attrs;
+        },
+        refrigerator: (nums: any, flags: any) => {
+            const attrs: Record<string, any> = { cooling_type: 'No Frost' };
+            if (nums.capacity_l) attrs.capacity = nums.capacity_l + ' L';
+            else if (nums.capacity_kg) attrs.capacity = nums.capacity_kg + ' KG';
+            if (flags.inox) attrs.finish = 'Inox';
+            return attrs;
+        },
+        freezer: (nums: any) => {
+            const attrs: Record<string, any> = { type: 'Coffre' };
+            if (nums.capacity_l) attrs.capacity = nums.capacity_l + ' L';
+            else if (nums.capacity_kg) attrs.capacity = nums.capacity_kg + ' KG';
+            return attrs;
+        },
+        ac: (nums: any) => {
+            const attrs: Record<string, any> = { type: 'Split', inverter: true };
+            if (nums.hp) attrs.power = nums.hp + ' HP';
+            if (nums.btu) attrs.btu = nums.btu + ' BTU';
+            return attrs;
+        },
+        microwave: (nums: any) => {
+            const attrs: Record<string, any> = { type: 'Micro-Ondes' };
+            if (nums.watts) attrs.power = nums.watts + ' W';
+            if (nums.capacity_l) attrs.capacity = nums.capacity_l + ' L';
+            return attrs;
+        },
+        dishwasher: (nums: any) => {
+            const attrs: Record<string, any> = { type: 'Lave-Vaisselle' };
+            if (nums.couvert) attrs.capacity = nums.couvert + ' couverts';
+            return attrs;
+        },
+        other: () => ({ status: 'Vérifié', warranty: '24 Mois' })
     } as Record<string, Function>,
 
     detectBrand(name: string): string {
@@ -107,15 +143,40 @@ export const EnrichmentService = {
         return { id: 'other', label: 'Autre' };
     },
 
-    extractSpecs(name: string, categoryId: string): Record<string, any> {
+    extractSpecs(name: string, _categoryId: string): Record<string, any> {
         const upper = name.toUpperCase();
         const specs: Record<string, any> = {};
 
-        const screenMatch = upper.match(/(\d{2})P\b/);
+        // Screen size: 55P, 55", 55 POUCES, 55POUCES, 55 INCH, 55INCH
+        const screenMatch = upper.match(/\b(\d{2,3})\s*(?:P\b|"|\s*(?:POUCES?|INCHES?))/);
         if (screenMatch) specs.size_or_feux = parseInt(screenMatch[1]);
 
-        const kgMatch = upper.match(/(\d+(?:\.\d+)?)\s*KG?\b/);
-        if (kgMatch) specs.capacity_kg = parseFloat(kgMatch[1]);
+        // Weight / capacity in KG
+        const kgMatch = upper.match(/\b(\d+(?:[.,]\d+)?)\s*KG?\b/);
+        if (kgMatch) specs.capacity_kg = parseFloat(kgMatch[1].replace(',', '.'));
+
+        // Capacity in litres (e.g. 350L, 23 LITRES)
+        const litreMatch = upper.match(/\b(\d+)\s*L(?:ITRES?)?\b/);
+        // Avoid false positive from model numbers like "LG" — require digits before
+        if (litreMatch && parseInt(litreMatch[1]) >= 10) {
+            specs.capacity_l = parseInt(litreMatch[1]);
+        }
+
+        // Power in watts (e.g. 800W, 1200 WATTS)
+        const wattMatch = upper.match(/\b(\d{3,4})\s*W(?:ATTS?)?\b/);
+        if (wattMatch) specs.watts = parseInt(wattMatch[1]);
+
+        // AC horsepower (1HP, 1.5 HP, 2CV)
+        const hpMatch = upper.match(/\b(\d+(?:[.,]\d+)?)\s*(?:HP|CV|CH)\b/);
+        if (hpMatch) specs.hp = parseFloat(hpMatch[1].replace(',', '.'));
+
+        // BTU rating
+        const btuMatch = upper.match(/\b(\d{4,6})\s*BTU/);
+        if (btuMatch) specs.btu = parseInt(btuMatch[1]);
+
+        // Dishwasher couvert count
+        const couvertMatch = upper.match(/\b(\d+)\s*COUVERTS?/);
+        if (couvertMatch) specs.couvert = parseInt(couvertMatch[1]);
 
         return specs;
     },
@@ -206,7 +267,10 @@ export const EnrichmentService = {
 
         // 3. Final Consensus
         this.computeConsensus(p);
-        p._meta.score = this.calculateScore(p);
+        const score = this.calculateScore(p);
+        p._meta.score = score;
+        // Keep identity.confidenceScore in sync so the Validator and UI read the same value
+        p.identity.confidenceScore = score;
         p._meta.ts = ts;
 
         return p;

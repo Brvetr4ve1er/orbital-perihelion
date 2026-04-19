@@ -205,8 +205,9 @@ export const ProductAdapter = {
             dishwasher: '🫗', cooker: '🍳', electric_oven: '🔥',
             builtin_oven: '🔥', cooktop: '🔥',
             blender: '🫙', mixer: '⚙️', kettle: '☕',
-            iron: '🔌', vacuum: '🌀', fryer: '🍟',
+            iron: '👔', vacuum: '🌀', fryer: '🍟',
             coffee_machine: '☕', toaster: '🍞',
+            hair_dryer: '💨', beauty: '💅',
             small_appliance: '🔌', other: '📦',
         };
         return icons[cat?.toLowerCase()] || '📦';
@@ -223,7 +224,8 @@ export const ProductAdapter = {
             mixer: 'Batteur/Pétrin', kettle: 'Bouilloire',
             iron: 'Fer à Repasser', vacuum: 'Aspirateur',
             fryer: 'Friteuse', coffee_machine: 'Cafetière',
-            toaster: 'Toaster', small_appliance: 'Petit Électroménager',
+            toaster: 'Toaster', hair_dryer: 'Sèche-Cheveux',
+            beauty: 'Beauté & Soin', small_appliance: 'Petit Électroménager',
             other: 'Autre',
         };
         return labels[cat?.toLowerCase()] || cat || 'Autre';

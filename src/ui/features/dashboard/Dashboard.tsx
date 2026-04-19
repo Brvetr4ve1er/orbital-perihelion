@@ -32,7 +32,15 @@ export const Dashboard = () => {
     const [compareIds, setCompareIds] = useState<string[]>([]);
 
     useEffect(() => {
-        return inventoryStore.subscribe(setState);
+        return inventoryStore.subscribe((newState) => {
+            setState(newState);
+            // Keep the open modal in sync when AI enrichment updates the product
+            setSelectedProduct(prev => {
+                if (!prev) return null;
+                const fresh = newState.products.find(p => p.identity.id === prev.identity.id);
+                return fresh ?? prev;
+            });
+        });
     }, []);
 
     const filteredProducts = useMemo(() => {

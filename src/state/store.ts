@@ -83,10 +83,10 @@ class Store {
         const products = this.state.products.map(p =>
             p.identity.id === updated.identity.id ? updated : p
         );
-        this.setState({
-            products,
-            filteredProducts: products,
-        });
+        // NOTE: Only update `products` here. `filteredProducts` is derived by the
+        // Dashboard via useMemo(Engine.filterProducts) so we must NOT overwrite it
+        // here — doing so would clear any active search/filter the user has set.
+        this.setState({ products });
         // [PH4-B] Persist via IndexedDB (updateOne is far cheaper than saveAll)
         Persistence.updateOne(updated).catch(e =>
             console.error('[Store] Failed to persist product update:', e)
