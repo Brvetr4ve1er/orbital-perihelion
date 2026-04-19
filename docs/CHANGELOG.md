@@ -6,6 +6,17 @@
 
 ---
 
+## Session 2026-04-19 — Import Crash Fix (Zod v4 bug)
+
+### FIX [CRITICAL] — "Cannot read properties of undefined (reading '_zod')" on CSV import
+**File:** `src/core/schema.ts` line 151
+**Root cause:** Zod v4.3.6 bug — `z.record(z.any())` (one-argument form) leaves `def.valueType` as `undefined` internally. When the parser tries to validate a product with any content in `enrichment.specs`, the ZodRecord parsing code does `def.valueType._zod.run(...)` which crashes with this error. The Web Worker catches it and forwards the message back to the UI.
+**Reproduction:** `z.record(z.any()).optional().safeParse({key: value})` throws. `z.record(z.string(), z.any()).optional().safeParse({key: value})` works fine.
+**Fix:** Changed `specs: z.record(z.any()).optional()` → `specs: z.record(z.string(), z.any()).optional()`. The explicit key schema makes Zod v4 initialize `def.valueType` correctly.
+**Scope:** Only `enrichment.specs` was affected — all other `z.record()` calls in the schema already used the two-argument form.
+
+---
+
 ## Session 2026-04-19 — Logic & UX Bug Sweep
 
 ### FIX — Store `updateProduct` was blowing away active filters

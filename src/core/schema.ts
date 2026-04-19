@@ -148,7 +148,7 @@ export const ProductSchema = z.object({
             url: z.string(),
             snippet: z.string().optional(),
         })).optional(),
-        specs: z.record(z.any()).optional(),
+        specs: z.record(z.string(), z.any()).optional(),
         intelligence: z.object({
             pros: z.array(z.string()),
             cons: z.array(z.string()),
