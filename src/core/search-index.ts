@@ -17,6 +17,11 @@ export function buildSearchIndex(p: Product): string {
         p.identity.subcategory || '',
         p.enrichment?.seoDescription || '',
         p.enrichment?.description || '',
+        // Essential product identifiers — make barcodes & part numbers searchable
+        p.enrichment?.barcode || '',
+        p.enrichment?.mpn || '',
+        (p.observations?.['barcode']?.[0]?.v as string) || '',
+        (p.observations?.['mpn']?.[0]?.v as string) || '',
     ];
 
     // Include consensus values (price, stock, specs, etc.)

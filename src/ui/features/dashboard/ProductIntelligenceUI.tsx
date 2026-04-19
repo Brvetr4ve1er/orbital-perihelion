@@ -170,6 +170,18 @@ export const ProductIntelligenceUI = ({ product }: { product: Product }) => {
                         <div className="modal-spec-label">SKU</div>
                         <div className="modal-spec-value">{lp.sku}</div>
                     </div>
+                    {product.enrichment?.barcode && (
+                        <div className="modal-spec">
+                            <div className="modal-spec-label">Code Barre / EAN</div>
+                            <div className="modal-spec-value" style={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{product.enrichment.barcode}</div>
+                        </div>
+                    )}
+                    {product.enrichment?.mpn && product.enrichment.mpn !== lp.sku && (
+                        <div className="modal-spec">
+                            <div className="modal-spec-label">Référence Fabricant</div>
+                            <div className="modal-spec-value" style={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{product.enrichment.mpn}</div>
+                        </div>
+                    )}
                 </div>
             </div>
 

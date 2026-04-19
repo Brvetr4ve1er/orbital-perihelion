@@ -155,6 +155,10 @@ export const ProductSchema = z.object({
             buyerFit: z.string(),
             featureScore: z.number(),
         }).optional(),
+        /** EAN / barcode / UPC / GTIN extracted from CSV */
+        barcode: z.string().optional(),
+        /** Manufacturer Part Number extracted from CSV */
+        mpn: z.string().optional(),
     }).optional(),
     observations: z.record(z.string(), z.array(z.any())).optional(),
     consensus: z.record(z.string(), z.object({ v: z.any(), c: z.number(), flag: z.string().nullable() })).optional(),

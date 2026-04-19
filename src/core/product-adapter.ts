@@ -12,11 +12,13 @@ export const ProductAdapter = {
         const ts = new Date().toISOString();
 
         // Support both the new RawProductRow and any legacy raw shape
-        const id    = String(raw.id || raw.ID || raw.SKU || Math.random().toString(36).substr(2, 9));
+        const id    = String(raw.id || raw.ID || raw.barcode || raw.SKU || Math.random().toString(36).substr(2, 9));
         const name  = raw.name || raw.NAME || raw.nom || raw.Nom || raw.designation || 'Produit sans nom';
         const brand = (raw.brand || raw.BRAND || raw.marque || raw.Marque || '').trim();
         const cat   = raw.category || raw.CATEGORY || raw.categorie || raw.Catégorie || 'other';
         const sku   = String(raw.sku || raw.SKU || raw.id || id);
+        const barcode = String(raw.barcode || raw.ean || raw.EAN || raw.upc || raw.UPC || raw.gtin || raw.GTIN || raw['Code Barre'] || '');
+        const mpn     = String(raw.mpn || raw.MPN || raw.model || raw.MODEL || '');
 
         const brandIsExplicit = brand.length > 0;
 
@@ -29,7 +31,7 @@ export const ProductAdapter = {
             identity: {
                 id,
                 brand: brand || 'Inconnu',
-                model: raw.model || raw.MODEL || sku,
+                model: mpn || raw.model || raw.MODEL || sku,
                 sku,
                 name,
                 category: cat,
@@ -103,6 +105,8 @@ export const ProductAdapter = {
             },
             enrichment: {
                 specs: raw._raw || {},
+                barcode: barcode || undefined,
+                mpn: mpn || undefined,
             },
         };
 
@@ -122,6 +126,12 @@ export const ProductAdapter = {
             m: 'direct',
             t: ts
         }];
+        if (barcode) {
+            p_obj.observations.barcode = [{ v: barcode, c: 1.0, s: 'inventory', m: 'direct', t: ts }];
+        }
+        if (mpn) {
+            p_obj.observations.mpn = [{ v: mpn, c: 1.0, s: 'inventory', m: 'direct', t: ts }];
+        }
 
         // [P0-4] Runtime Validation via Zod
         const result = ProductSchema.safeParse(p_obj);

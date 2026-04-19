@@ -38,29 +38,38 @@
   padding: 0;
 }
 
+#root {
+  height: 100%;
+}
+
 html {
   scroll-behavior: smooth;
+  height: 100%;
+  overflow: hidden;
 }
 
 body {
   font-family: var(--font-sans);
   background: var(--bg-primary);
   color: var(--text-primary);
-  min-height: 100vh;
-  overflow-y: auto;
-  overflow-x: hidden;
+  height: 100%;
+  overflow: hidden;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* [P3-1] App shell layout — flex column fills full viewport */
+/* [P3-1] App shell layout — flex column fills full viewport.
+   Scroll lives here so it works reliably inside any iframe proxy. */
 .app-container {
-  min-height: 100vh;
+  height: 100%;
   display: flex;
   flex-direction: column;
   position: relative;
   background: var(--bg-primary);
   color: var(--text-primary);
+  overflow-y: auto;
+  overflow-x: hidden;
+  scroll-behavior: smooth;
 }
 
 main {
@@ -1737,16 +1746,7 @@ main {
   padding-top: 1rem;
 }
 
-/* ═══ App Container [P3-1] ═══ */
-.app-container {
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  font-family: var(--font-sans);
-  background: var(--bg-primary);
-  color: var(--text-primary);
-}
-
+/* ═══ App Container [P3-1] — duplicate block kept for specificity, kept in sync ═══ */
 .app-container main {
   flex: 1;
   position: relative;
@@ -2583,14 +2583,20 @@ main {
 }
 
 .tv-body {
-    flex: 1;
     overflow-y: auto;
+    overflow-x: hidden;
     border: 1px solid var(--border-glass);
     border-top: none;
-    border-radius: 0 0 var(--radius-md) var(--radius-md);
     background: var(--bg-secondary);
-    height: 65vh;
+    /* Use a fixed viewport-relative height so the virtualizer has a
+       bounded scroll container. Do NOT use flex: 1 here — the parent
+       flex container is not height-constrained, so flex: 1 would make
+       the element grow infinitely and prevent scrolling. */
+    height: 60vh;
     min-height: 300px;
+    /* Custom scrollbar */
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-glass) transparent;
 }
 
 .tv-body::-webkit-scrollbar { width: 6px; }

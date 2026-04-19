@@ -6,6 +6,33 @@
 
 ---
 
+## Session 2026-04-19 — CSV Parser Hardening & Scroll Fix
+
+### FIX [CRITICAL] — `normalizeKey` diacritic removal was completely broken
+**File:** `src/core/universal-csv-parser.ts`
+**Root cause:** `normalizeKey()` called `.normalize('NFC')` AFTER the diacritic strip regex. In NFC form, accented characters like `é` are single precomposed code-points (U+00E9), not subject to the `[\u0300-\u036f]` regex. The fix is to call `.normalize('NFD')` FIRST which decomposes `é` → `e + U+0301`, allowing the regex to remove the combining mark.
+**Impact:** Every CSV header containing an accented character (`Catégorie`, `Quantité en Stock`, `Marque`, `Désignation`, etc.) was returning a garbled norm string, making header→field mapping fail silently. Users importing any real French inventory file would get partially or fully unmapped fields.
+
+### FIX [CRITICAL] — COLUMN_MAP variants were never normalized
+**File:** `src/core/universal-csv-parser.ts`
+**Root cause:** `mapHeaders()` normalized the header string but compared it directly against raw variant strings (e.g. `'catégorie'`). Even with the correct NFD fix, `'categorie' !== 'catégorie'`. Pre-computing `NORMALIZED_MAP` at module load time ensures both sides of every comparison are in the same ASCII form.
+
+### FIX — `parseNumber` thousands separator handling
+**File:** `src/core/universal-csv-parser.ts`
+**Issue:** `.replace(',', '.')` only replaces the first comma. `1.234,56` → `1.234.56` → NaN → 0. Now detects separator conventions from position (US vs European) and handles space-separated thousands.
+
+### ADD — Barcode / EAN / MPN as canonical product identifiers
+**Files:** `src/core/universal-csv-parser.ts`, `src/core/product-adapter.ts`, `src/core/schema.ts`, `src/core/search-index.ts`
+**Issue:** `Code Barre` (EAN-13 barcode) was mapped to the `id` field. If the file also had an explicit `ID` column, the barcode was silently discarded. `mpn` (manufacturer part number) was not extracted at all.
+**Fix:** Added dedicated `barcode` and `mpn` fields to `RawProductRow`, `COLUMN_MAP`, and the CPO enrichment schema. Both are stored as observations for the consensus layer and included in the search index so products can be found by scanning a barcode. The product detail modal now shows barcode and MPN if present.
+
+### FIX — Scroll broken in Replit iframe proxy
+**File:** `src/index.css`
+**Issue 1:** Page scroll was set on `body` (`overflow-y: auto`). In Replit's proxied iframe, the body scroll can be intercepted or ignored. The fix moves the scroll root to `.app-container` with `height: 100%; overflow-y: auto`, while `html`/`body`/`#root` are set to `height: 100%; overflow: hidden`.
+**Issue 2:** `.tv-body` (the TableView virtual scroll container) had both `flex: 1` and `height: 65vh`. In a flex parent with no fixed height, `flex: 1` grows unboundedly, preventing the `height` constraint from creating a scroll container. Removed `flex: 1`; the virtualizer now correctly sees a bounded `60vh` scroll element.
+
+---
+
 ## Session 2026-04-19 — Dashboard Evolution & Performance
 
 ### ADD — Compare & Table Views

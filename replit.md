@@ -38,6 +38,19 @@ npm run dev    # Start dev server on port 5000
 npm run build  # Build for production (output: dist/)
 ```
 
+## Key Architecture Notes
+
+### CSV Parser (`src/core/universal-csv-parser.ts`)
+- **NFD normalization is critical**: `normalizeKey()` must call `.normalize('NFD')` BEFORE stripping diacritics, not NFC after. NFD decomposes precomposed chars (é → e + ´ combining) so the regex can strip them.
+- **Both sides normalized**: `NORMALIZED_MAP` pre-normalizes all COLUMN_MAP variants at module load so header↔variant comparisons are always pure ASCII.
+- **Canonical identifiers extracted**: `id`, `name`, `brand`, `category`, `sku`, `barcode`/EAN, `mpn`/part-number, prices, stock.
+- **Thousands separator aware**: `parseNumber()` detects EU vs US/ISO format from last-separator position.
+
+### Scroll Architecture
+- Scroll root is `.app-container` (`height: 100%; overflow-y: auto`), NOT body.
+- `html`, `body`, `#root` are `height: 100%; overflow: hidden` — this is required for Replit's iframe proxy to pass scroll events correctly.
+- TableView virtual scroll: `.tv-body` uses `height: 60vh` (NOT `flex: 1`, which would make it grow unboundedly in an unconstrained flex parent and break the virtualizer).
+
 ## External Services (optional, not required to run the UI)
 - LM Studio at `http://10.36.208.130:1234` — local LLM (proxied via `/api/llm`)
 - Python scraper sidecar at `http://127.0.0.1:5002` — web enrichment (proxied via `/api/search`, `/api/scrape`, `/api/enrich-web`)

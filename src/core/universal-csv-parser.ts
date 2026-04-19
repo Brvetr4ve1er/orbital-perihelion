@@ -8,19 +8,23 @@
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Column mapping — maps canonical field names to possible header variants
+// All variants must be pre-normalized ASCII strings (lower, no diacritics,
+// no special chars) so they can be compared directly against normalized headers.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const COLUMN_MAP: Record<string, string[]> = {
-    id:            ['id', 'ref', 'code', 'code barre', 'barcode', 'sku', 'reference', 'réf'],
-    name:          ['nom', 'name', 'designation', 'désignation', 'libelle', 'libellé', 'produit', 'article', 'description', 'label', 'prod'],
-    brand:         ['marque', 'brand', 'fabricant', 'manufacturer', 'supplier', 'fournisseur'],
-    category:      ['categorie', 'catégorie', 'category', 'famille', 'family', 'type', 'sous famille'],
-    sku:           ['sku', 'ref', 'reference', 'cod', 'code article', 'code produit'],
-    price_retail:  ['prix de vente', 'prix vente', 'pv ttc', 'pv ht', 'price', 'prix retail', 'prix détail', 'prix de vente (détail)', 'retail price', 'selling price', 'sale price', 'tarif'],
-    price_purchase:['prix achat', "prix d'achat", 'pa', 'cost', 'purchase price', 'coût', 'cump'],
+    id:             ['id', 'ref', 'code', 'code barre', 'barcode', 'sku', 'reference', 'ref'],
+    name:           ['nom', 'name', 'designation', 'libelle', 'produit', 'article', 'description', 'label', 'prod', 'titre', 'title'],
+    brand:          ['marque', 'brand', 'fabricant', 'manufacturer', 'supplier', 'fournisseur'],
+    category:       ['categorie', 'category', 'famille', 'family', 'type', 'sous famille', 'departement'],
+    sku:            ['sku', 'reference', 'cod', 'code article', 'code produit', 'article code', 'part number', 'partnumber'],
+    barcode:        ['code barre', 'barcode', 'ean', 'upc', 'gtin', 'ean13', 'ean 13', 'code barres', 'code a barres', 'codebarres', 'codebar'],
+    mpn:            ['mpn', 'manufacturer part', 'mfr part', 'part no', 'part number', 'modele', 'model number', 'model no', 'numero modele'],
+    price_retail:   ['prix de vente', 'prix vente', 'pv ttc', 'pv ht', 'price', 'prix retail', 'prix detail', 'prix de vente detail', 'retail price', 'selling price', 'sale price', 'tarif', 'pvttc', 'pvht'],
+    price_purchase: ['prix achat', 'pa', 'cost', 'purchase price', 'cout', 'cump', 'dernier prix achat', 'last purchase price', 'coût unitaire', 'cout unitaire'],
     price_wholesale:['prix de gros', 'gros', 'wholesale', 'prix gros'],
-    stock:         ['quantite', 'quantité', 'qte', 'qty', 'stock', 'quantité en stock', 'quantity', 'disponible'],
-    stock_status:  ['statut stock', 'statut', 'status', 'etat stock', 'disponibilité'],
+    stock:          ['quantite', 'qte', 'qty', 'stock', 'quantite en stock', 'quantity', 'disponible', 'quantity in stock', 'stock qty'],
+    stock_status:   ['statut stock', 'statut', 'status', 'etat stock', 'disponibilite', 'availability'],
 };
 
 // Delimiters to try in order of preference
@@ -29,6 +33,31 @@ const DELIMITERS = [';', ',', '\t', '|'];
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Normalizes a string to lowercase ASCII for fuzzy comparison.
+ * IMPORTANT: NFD decomposition MUST come first so combining diacritics
+ * (U+0300–U+036F) are separated and can be stripped.
+ * If we normalize to NFC first (the default), accented chars like é (U+00E9)
+ * stay as a single code-point and the regex has nothing to remove.
+ */
+function normalizeKey(s: string): string {
+    return s
+        .normalize('NFD')                        // decompose: é → e + ´
+        .replace(/[\u0300-\u036f]/g, '')         // strip combining diacritics
+        .toLowerCase()
+        .replace(/[^a-z0-9 ]/g, ' ')            // non-alphanumeric → space
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+// Pre-compute normalized variants so we don't repeat the work every parse
+const NORMALIZED_MAP: Record<string, string[]> = Object.fromEntries(
+    Object.entries(COLUMN_MAP).map(([field, variants]) => [
+        field,
+        variants.map(normalizeKey),
+    ])
+);
 
 function detectDelimiter(firstLine: string): string {
     let best = ',';
@@ -61,25 +90,41 @@ function parseRow(line: string, delimiter: string): string[] {
     return values;
 }
 
-function normalizeKey(s: string): string {
-    return s.toLowerCase()
-        .replace(/[\u0300-\u036f]/g, '')   // remove diacritics (after decompose)
-        .normalize('NFC')
-        .replace(/[^a-z0-9 ]/g, ' ')       // remove special chars
-        .replace(/\s+/g, ' ')
-        .trim();
-}
-
+/**
+ * Maps raw CSV headers to canonical field names.
+ * Both the header and the variants are normalized with normalizeKey()
+ * so accent/case differences are transparent.
+ *
+ * Priority rules:
+ * - `barcode` is checked before `id`, so a dedicated EAN/barcode column
+ *   is not accidentally swallowed by the generic id mapping.
+ * - Once a field is claimed it is not re-claimed.
+ */
 function mapHeaders(headers: string[]): Record<string, number> {
+    // Fields that should be checked first to avoid wrong captures
+    const PRIORITY_ORDER = ['barcode', 'mpn', 'id', 'name', 'brand', 'category', 'sku',
+        'price_retail', 'price_purchase', 'price_wholesale', 'stock', 'stock_status'];
+
+    // Build a sorted entry list
+    const sortedEntries = PRIORITY_ORDER.map(f => [f, NORMALIZED_MAP[f] as string[]] as const)
+        .filter(([, variants]) => variants !== undefined);
+
     const mapping: Record<string, number> = {};
 
     headers.forEach((raw, idx) => {
         const norm = normalizeKey(raw);
 
-        for (const [field, variants] of Object.entries(COLUMN_MAP)) {
+        for (const [field, variants] of sortedEntries) {
             if (mapping[field] !== undefined) continue; // already mapped
             for (const variant of variants) {
-                if (norm === variant || norm.includes(variant) || variant.includes(norm)) {
+                // Exact match preferred; partial match only when both strings
+                // are long enough (≥ 3 chars) to avoid false positives on
+                // short tokens like "p", "id", etc.
+                const exactMatch = norm === variant;
+                const partialMatch =
+                    norm.length >= 3 && variant.length >= 3 &&
+                    (norm.includes(variant) || variant.includes(norm));
+                if (exactMatch || partialMatch) {
                     mapping[field] = idx;
                     break;
                 }
@@ -96,10 +141,53 @@ function getValue(values: string[], mapping: Record<string, number>, field: stri
     return values[idx]?.trim() ?? '';
 }
 
+/**
+ * Parses a numeric string that may use either:
+ *   - US/ISO format:       1,234.56  (comma = thousands sep, dot = decimal)
+ *   - European format:     1.234,56  (dot = thousands sep, comma = decimal)
+ *   - Space-separated:     1 234,56  (space = thousands sep)
+ *   - Plain:               1234.56
+ */
 function parseNumber(s: string): number {
     if (!s) return 0;
-    // Remove currency symbols, spaces, non-numeric chars except dot/comma
-    const cleaned = s.replace(/[^\d.,]/g, '').replace(',', '.');
+
+    // Remove currency symbols and letter characters, keep digits .,-
+    let cleaned = s.replace(/[^\d.,\- ]/g, '').trim();
+    if (!cleaned) return 0;
+
+    // Detect format by the position and count of separators
+    const lastComma = cleaned.lastIndexOf(',');
+    const lastDot   = cleaned.lastIndexOf('.');
+
+    if (lastComma !== -1 && lastDot !== -1) {
+        // Both present — whichever is last is the decimal separator
+        if (lastComma > lastDot) {
+            // European: 1.234,56
+            cleaned = cleaned.replace(/\./g, '').replace(',', '.');
+        } else {
+            // US: 1,234.56
+            cleaned = cleaned.replace(/,/g, '');
+        }
+    } else if (lastComma !== -1) {
+        // Only comma: could be decimal (1234,56) or thousands (1,234)
+        const afterComma = cleaned.slice(lastComma + 1);
+        if (afterComma.length === 3 && !afterComma.includes(',')) {
+            // Thousands separator (e.g. 1,234) — remove it
+            cleaned = cleaned.replace(/,/g, '');
+        } else {
+            // Decimal comma
+            cleaned = cleaned.replace(',', '.');
+        }
+    }
+    // Only dots — remove all but the last (handles "1.234.56" edge case)
+    else if ((cleaned.match(/\./g) || []).length > 1) {
+        const parts = cleaned.split('.');
+        cleaned = parts.slice(0, -1).join('') + '.' + parts[parts.length - 1];
+    }
+
+    // Remove any remaining spaces (thousands sep with spaces)
+    cleaned = cleaned.replace(/\s/g, '');
+
     return parseFloat(cleaned) || 0;
 }
 
@@ -113,6 +201,10 @@ export interface RawProductRow {
     brand: string;
     category: string;
     sku: string;
+    /** EAN / barcode / UPC / GTIN */
+    barcode: string;
+    /** Manufacturer part number */
+    mpn: string;
     price_retail: number;
     price_purchase: number;
     price_wholesale: number;
@@ -139,10 +231,6 @@ export const UniversalCSVParser = {
         const rawHeaders = parseRow(nonEmpty[0], delimiter);
         const mapping = mapHeaders(rawHeaders);
 
-        // Build a lookup for all columns by normalized name
-        const allCols: Record<string, number> = {};
-        rawHeaders.forEach((h, i) => { allCols[normalizeKey(h)] = i; });
-
         const rows: RawProductRow[] = [];
 
         for (let i = 1; i < nonEmpty.length; i++) {
@@ -152,7 +240,7 @@ export const UniversalCSVParser = {
             const values = parseRow(line, delimiter);
             if (values.length < 2) continue; // skip degenerate rows
 
-            // Build raw object with all columns
+            // Build raw object with all columns preserved
             const rawObj: Record<string, string> = {};
             rawHeaders.forEach((h, idx) => {
                 rawObj[h] = values[idx]?.trim() ?? '';
@@ -162,25 +250,29 @@ export const UniversalCSVParser = {
             const name = getValue(values, mapping, 'name');
             if (!name) continue; // skip rows with no product name
 
-            // Derive ID — prefer explicit id field, fall back to sku, then position
+            // Derive ID — prefer explicit id field, fall back to barcode,
+            // then sku, then position
             const id =
                 getValue(values, mapping, 'id') ||
+                getValue(values, mapping, 'barcode') ||
                 getValue(values, mapping, 'sku') ||
                 `row_${i}`;
 
-            const brand = getValue(values, mapping, 'brand');
+            const barcode = getValue(values, mapping, 'barcode');
+            const mpn     = getValue(values, mapping, 'mpn');
+            const brand   = getValue(values, mapping, 'brand');
             const category = getValue(values, mapping, 'category');
-            const sku = getValue(values, mapping, 'sku') || id;
+            const sku = getValue(values, mapping, 'sku') || getValue(values, mapping, 'id') || id;
 
             // Price: try retail first, fall back to any price column
             let price_retail = parseNumber(getValue(values, mapping, 'price_retail'));
-            const price_purchase = parseNumber(getValue(values, mapping, 'price_purchase'));
+            const price_purchase  = parseNumber(getValue(values, mapping, 'price_purchase'));
             const price_wholesale = parseNumber(getValue(values, mapping, 'price_wholesale'));
 
             // If retail is 0, try wholesale
             if (price_retail === 0 && price_wholesale > 0) price_retail = price_wholesale;
 
-            const stock = parseNumber(getValue(values, mapping, 'stock'));
+            const stock       = parseNumber(getValue(values, mapping, 'stock'));
             const stock_status = getValue(values, mapping, 'stock_status');
 
             rows.push({
@@ -189,6 +281,8 @@ export const UniversalCSVParser = {
                 brand,
                 category,
                 sku,
+                barcode,
+                mpn,
                 price_retail,
                 price_purchase,
                 price_wholesale,
@@ -205,18 +299,20 @@ export const UniversalCSVParser = {
      * Returns a diagnostic summary of what columns were detected.
      * Useful for debugging unknown formats.
      */
-    diagnose(csvText: string): { delimiter: string; headers: string[]; mappedFields: string[] } {
+    diagnose(csvText: string): { delimiter: string; headers: string[]; mappedFields: string[]; unmappedHeaders: string[] } {
         const lines = csvText.replace(/\r\n/g, '\n').split('\n').filter(l => l.trim());
-        if (!lines.length) return { delimiter: ',', headers: [], mappedFields: [] };
+        if (!lines.length) return { delimiter: ',', headers: [], mappedFields: [], unmappedHeaders: [] };
 
         const delimiter = detectDelimiter(lines[0]);
         const headers = parseRow(lines[0], delimiter);
         const mapping = mapHeaders(headers);
+        const mappedIndices = new Set(Object.values(mapping));
 
         return {
             delimiter,
             headers,
             mappedFields: Object.keys(mapping),
+            unmappedHeaders: headers.filter((_, i) => !mappedIndices.has(i)),
         };
     }
 };
