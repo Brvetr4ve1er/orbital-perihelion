@@ -18,26 +18,58 @@ export const Engine = {
         const q = query.toLowerCase().trim();
         const { category, brand, stock } = filters;
 
-        return products.filter(p => {
-            // 1. Category Filter
+        const filtered = products.filter(p => {
             if (category && category !== 'all' && p.identity.category !== category) return false;
+            if (brand    && brand    !== 'all' && p.identity.brand    !== brand)    return false;
 
-            // 2. Brand Filter
-            if (brand && brand !== 'all' && p.identity.brand !== brand) return false;
-
-            // 3. Stock Status Filter
             if (stock && stock !== 'all') {
                 const lp = ProductAdapter.toLegacy(p);
                 if (lp.commercial.stockStatus !== stock) return false;
             }
 
-            // 4. Search Query — use cached _searchIndex when present, build lazily otherwise
+            // Quick-view presets — composable with the above.
+            const view = filters.view;
+            if (view === 'dead_stock') {
+                const qty = (p.observations?.stock?.[0]?.v as number) ?? 0;
+                if (qty < 10) return false; // only overstock candidates
+            } else if (view === 'no_image') {
+                const has = p.visual?.heroImage || (p.enrichment?.images && p.enrichment.images[0]);
+                if (has) return false;
+            } else if (view === 'not_enriched') {
+                if (p.enrichment?.intelligence) return false;
+            } else if (view === 'low_margin') {
+                const min = p.commercial?.priceRange?.min || 0;
+                const typ = p.commercial?.priceRange?.typical || 0;
+                if (!typ || !min) return false;
+                const margin = (typ - min) / typ;
+                if (margin > 0.15) return false;
+            }
+
             if (q) {
                 const idx = p._searchIndex || buildSearchIndex(p);
                 return idx.includes(q);
             }
-
             return true;
+        });
+
+        // 🧠 Smart Ranking (Decision Engine)
+        // 1. In-stock first
+        // 2. High confidence score
+        // 3. High margin
+        return filtered.sort((a, b) => {
+            const aStock = (a.observations?.stock?.[0]?.v as number) || 0;
+            const bStock = (b.observations?.stock?.[0]?.v as number) || 0;
+            
+            if (aStock > 0 && bStock === 0) return -1;
+            if (aStock === 0 && bStock > 0) return 1;
+            
+            const aConf = a.identity.confidenceScore || 0;
+            const bConf = b.identity.confidenceScore || 0;
+            if (bConf !== aConf) return bConf - aConf;
+            
+            const aMargin = (a.commercial.priceRange?.typical || 0) - (a.commercial.priceRange?.min || 0);
+            const bMargin = (b.commercial.priceRange?.typical || 0) - (b.commercial.priceRange?.min || 0);
+            return bMargin - aMargin;
         });
     },
 

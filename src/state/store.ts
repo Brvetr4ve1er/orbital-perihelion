@@ -93,6 +93,48 @@ class Store {
         );
     }
 
+    /**
+     * Apply a percentage markup/markdown to the typical retail price of many products at once.
+     * pct is a percent delta: +10 = raise 10%, -15 = mark down 15%.
+     */
+    bulkAdjustPrice(ids: string[], pct: number) {
+        if (!ids.length || !Number.isFinite(pct)) return;
+        const idSet = new Set(ids);
+        const factor = 1 + pct / 100;
+        const products = this.state.products.map(p => {
+            if (!idSet.has(p.identity.id)) return p;
+            const pr = p.commercial?.priceRange;
+            if (!pr || !pr.typical) return p;
+            return {
+                ...p,
+                commercial: {
+                    ...p.commercial,
+                    priceRange: {
+                        ...pr,
+                        typical: Math.round(pr.typical * factor),
+                        min: pr.min != null ? Math.round(pr.min * factor) : pr.min,
+                        max: pr.max != null ? Math.round(pr.max * factor) : pr.max,
+                    },
+                },
+            };
+        });
+        this.setState({ products });
+        Persistence.saveAll(products).catch(e =>
+            console.error('[Store] Failed to persist bulk price:', e)
+        );
+    }
+
+    /** Delete products by id (single or bulk). Persists the change to IDB. */
+    deleteProducts(ids: string[]) {
+        if (!ids.length) return;
+        const idSet = new Set(ids);
+        const products = this.state.products.filter(p => !idSet.has(p.identity.id));
+        this.setState({ products });
+        Persistence.saveAll(products).catch(e =>
+            console.error('[Store] Failed to persist delete:', e)
+        );
+    }
+
     // ── Filter / Search Actions ───────────────────────────────────────────────
 
     setSearchQuery(query: string) {

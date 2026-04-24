@@ -1,3 +1,5 @@
+import { Product } from './schema';
+
 /**
  * Search Index Builder — Unit 3
  * 
@@ -5,8 +7,6 @@
  * Stored on `product._searchIndex` so FilterBar / Engine can match
  * without re-computing on every keystroke.
  */
-import { Product } from './schema';
-
 export function buildSearchIndex(p: Product): string {
     const parts: string[] = [
         p.identity.name || '',
@@ -17,25 +17,25 @@ export function buildSearchIndex(p: Product): string {
         p.identity.subcategory || '',
         p.enrichment?.seoDescription || '',
         p.enrichment?.description || '',
-        // Essential product identifiers — make barcodes & part numbers searchable
+        // Essential product identifiers
         p.enrichment?.barcode || '',
         p.enrichment?.mpn || '',
-        (p.observations?.['barcode']?.[0]?.v as string) || '',
-        (p.observations?.['mpn']?.[0]?.v as string) || '',
     ];
 
-    // Include consensus values (price, stock, specs, etc.)
-    if (p.consensus) {
-        for (const entry of Object.values(p.consensus)) {
-            if (entry && entry.v !== undefined && entry.v !== null) {
-                parts.push(String(entry.v));
+    // Include observation values (stock status, etc.)
+    if (p.observations) {
+        for (const [key, obs] of Object.entries(p.observations)) {
+            if (Array.isArray(obs) && obs[0]?.v) {
+                parts.push(String(obs[0].v));
             }
         }
     }
 
-    // Include comparison tags
-    if (p.technical?.comparisonTags?.length) {
-        parts.push(...p.technical.comparisonTags);
+    // Include specs keys and values
+    if (p.enrichment?.specs) {
+        for (const [k, v] of Object.entries(p.enrichment.specs)) {
+            parts.push(k, String(v));
+        }
     }
 
     return parts.join(' ').toLowerCase();

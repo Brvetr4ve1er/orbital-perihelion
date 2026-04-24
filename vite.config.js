@@ -5,10 +5,21 @@ import { resolve } from 'path';
 export default defineConfig({
     plugins: [react()],
     build: {
+        chunkSizeWarningLimit: 900,
         rollupOptions: {
             input: {
                 main:  resolve(__dirname, 'index.html'),
                 graph: resolve(__dirname, 'graph.html'),
+            },
+            output: {
+                manualChunks: {
+                    react:       ['react', 'react-dom'],
+                    d3:          ['d3', 'd3-color', 'd3-force', 'd3-scale', 'd3-selection', 'd3-zoom'],
+                    framer:      ['framer-motion'],
+                    tanstack:    ['@tanstack/react-virtual'],
+                    zod:         ['zod'],
+                    idb:         ['idb'],
+                },
             },
         },
     },
@@ -21,6 +32,11 @@ export default defineConfig({
                 target: 'http://10.36.208.130:1234',
                 changeOrigin: true,
                 rewrite: (path) => path.replace(/^\/api\/llm/, '/v1/chat/completions')
+            },
+            '/api/ollama': {
+                target: 'http://127.0.0.1:11434',
+                changeOrigin: true,
+                rewrite: (path) => path.replace(/^\/api\/ollama/, ''),
             },
             '/api/proxy': {
                 target: 'http://127.0.0.1:5001',

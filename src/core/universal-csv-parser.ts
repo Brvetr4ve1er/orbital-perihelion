@@ -13,17 +13,17 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 const COLUMN_MAP: Record<string, string[]> = {
-    id:             ['id', 'ref', 'code', 'code barre', 'barcode', 'sku', 'reference', 'ref'],
-    name:           ['nom', 'name', 'designation', 'libelle', 'produit', 'article', 'description', 'label', 'prod', 'titre', 'title'],
-    brand:          ['marque', 'brand', 'fabricant', 'manufacturer', 'supplier', 'fournisseur'],
-    category:       ['categorie', 'category', 'famille', 'family', 'type', 'sous famille', 'departement'],
-    sku:            ['sku', 'reference', 'cod', 'code article', 'code produit', 'article code', 'part number', 'partnumber'],
-    barcode:        ['code barre', 'barcode', 'ean', 'upc', 'gtin', 'ean13', 'ean 13', 'code barres', 'code a barres', 'codebarres', 'codebar'],
-    mpn:            ['mpn', 'manufacturer part', 'mfr part', 'part no', 'part number', 'modele', 'model number', 'model no', 'numero modele'],
-    price_retail:   ['prix de vente', 'prix vente', 'pv ttc', 'pv ht', 'price', 'prix retail', 'prix detail', 'prix de vente detail', 'retail price', 'selling price', 'sale price', 'tarif', 'pvttc', 'pvht'],
-    price_purchase: ['prix achat', 'pa', 'cost', 'purchase price', 'cout', 'cump', 'dernier prix achat', 'last purchase price', 'coût unitaire', 'cout unitaire'],
-    price_wholesale:['prix de gros', 'gros', 'wholesale', 'prix gros'],
-    stock:          ['quantite', 'qte', 'qty', 'stock', 'quantite en stock', 'quantity', 'disponible', 'quantity in stock', 'stock qty'],
+    id:             ['id', 'ref', 'code', 'code barre', 'barcode', 'sku', 'reference', 'ref', 'article_id', 'product_id'],
+    name:           ['nom', 'name', 'designation', 'libelle', 'produit', 'article', 'description', 'label', 'prod', 'titre', 'title', 'product name'],
+    brand:          ['marque', 'brand', 'fabricant', 'manufacturer', 'supplier', 'fournisseur', 'brand_name', 'mfr'],
+    category:       ['categorie', 'category', 'famille', 'family', 'type', 'sous famille', 'departement', 'dept', 'groupe', 'group', 'division', 'classe', 'class'],
+    sku:            ['sku', 'reference', 'cod', 'code article', 'code produit', 'article code', 'part number', 'partnumber', 'sku_number'],
+    barcode:        ['code barre', 'barcode', 'ean', 'upc', 'gtin', 'ean13', 'ean 13', 'code barres', 'code a barres', 'codebarres', 'codebar', 'upc_code'],
+    mpn:            ['mpn', 'manufacturer part', 'mfr part', 'part no', 'part number', 'modele', 'model number', 'model no', 'numero modele', 'model'],
+    price_retail:   ['prix de vente', 'prix vente', 'pv ttc', 'pv ht', 'price', 'prix retail', 'prix detail', 'prix de vente detail', 'retail price', 'selling price', 'sale price', 'tarif', 'pvttc', 'pvht', 'prix_unit'],
+    price_purchase: ['prix achat', 'pa', 'cost', 'purchase price', 'cout', 'cump', 'dernier prix achat', 'last purchase price', 'coût unitaire', 'cout unitaire', 'pa_ht'],
+    price_wholesale:['prix de gros', 'gros', 'wholesale', 'prix gros', 'prix revendeur'],
+    stock:          ['quantite', 'qte', 'qty', 'stock', 'quantite en stock', 'quantity', 'disponible', 'quantity in stock', 'stock qty', 'stk'],
     stock_status:   ['statut stock', 'statut', 'status', 'etat stock', 'disponibilite', 'availability'],
 };
 

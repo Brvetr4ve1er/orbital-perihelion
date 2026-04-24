@@ -13,13 +13,16 @@ import { openDB, IDBPDatabase } from 'idb';
 import { Product } from '../core/schema';
 
 const DB_NAME = 'pkos_v2';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_PRODUCTS = 'products';
 const STORE_META = 'meta';
+const STORE_SALES = 'sales';
 
 let _db: IDBPDatabase | null = null;
 
-async function getDB(): Promise<IDBPDatabase | null> {
+export const SALES_STORE = STORE_SALES;
+
+export async function getDB(): Promise<IDBPDatabase | null> {
     if (_db) return _db;
     try {
         _db = await openDB(DB_NAME, DB_VERSION, {
@@ -29,6 +32,11 @@ async function getDB(): Promise<IDBPDatabase | null> {
                 }
                 if (!db.objectStoreNames.contains(STORE_META)) {
                     db.createObjectStore(STORE_META);
+                }
+                if (!db.objectStoreNames.contains(STORE_SALES)) {
+                    const s = db.createObjectStore(STORE_SALES, { keyPath: 'id', autoIncrement: true });
+                    s.createIndex('sku',  'sku');
+                    s.createIndex('date', 'date');
                 }
             },
         });

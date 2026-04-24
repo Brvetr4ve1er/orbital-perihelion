@@ -1,8 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Product } from '../../core/schema';
-import { ProductAdapter } from '../../core/product-adapter';
 import { useSettings } from '../features/settings/useSettings';
+import { ProductAdapter } from '../../core/product-adapter';
+import { getVelocityMap } from '../../services/velocity';
+import { getAnalyticsMap } from '../../services/analytics';
+import { SalesService } from '../../services/sales';
+import { inventoryStore } from '../../state/store';
+import { Sparkline } from './Sparkline';
 
 interface ProductCardProps {
     product: Product;
@@ -12,249 +17,234 @@ interface ProductCardProps {
     onToggleCompare?: () => void;
 }
 
-// Liquid glass + Framer Motion + AOS. Designed to surface every lens
-// the schema offers (identity, visual, commercial, marketing, intelligence).
+/**
+ * Product Card — dense commerce-grade tile.
+ * Collapsed: scan-view (image, name, price, stock, 4 chips).
+ * Expanded : full intelligence readout (specs, pros/cons, competitor prices, sources).
+ */
 export const ProductCard = ({ product, onClick, index = 0, inCompare, onToggleCompare }: ProductCardProps) => {
     const settings = useSettings();
-    const layout = settings.cardLayout;
-    const { currency, language } = settings.locale;
-
-    const lp = ProductAdapter.toLegacy(product);
-    const comm = lp.commercial;
-
-    const gallery = useMemo(() => {
-        const imgs: string[] = [];
-        if (product.visual?.heroImage) imgs.push(product.visual.heroImage);
-        for (const g of product.visual?.gallery || []) if (g && !imgs.includes(g)) imgs.push(g);
-        for (const e of product.enrichment?.images || []) if (e && !imgs.includes(e)) imgs.push(e);
-        return imgs;
-    }, [product]);
-
-    const [slide, setSlide] = useState(0);
+    const { currency, language } = settings.locale || { currency: 'DZD', language: 'fr-DZ' };
+    const { cardLayout } = settings;
     const [expanded, setExpanded] = useState(false);
-    useEffect(() => { setSlide(0); }, [product.identity.id]);
+
+    const id = product.identity;
+    const comm = product.commercial;
+    const enrich = product.enrichment;
+    const intel = enrich?.intelligence || product.knowledge?.insights;
+    const tech = product.technical;
+
+    const retailPrice = comm.priceRange?.typical || 0;
+    const stockQty = (product.observations?.stock?.[0]?.v as number) ?? 0;
+    const stockStatus = stockQty > 5 ? 'in-stock' : stockQty > 0 ? 'low-stock' : 'out-of-stock';
+    const stockLabel = stockQty > 5 ? '🟢 In Stock' : stockQty > 0 ? '🟡 Low Stock' : '🔴 Out of Stock';
 
     const priceFmt = useMemo(
         () => new Intl.NumberFormat(language, {
             style: 'currency',
-            currency,
+            currency: comm.priceRange?.currency || currency,
             maximumFractionDigits: 0,
         }),
-        [language, currency],
+        [language, currency, comm.priceRange?.currency],
     );
 
-    const insights = product.knowledge?.insights;
-    const enrichIntel = product.enrichment?.intelligence;
-    const pros: string[] = insights?.pros || enrichIntel?.pros || [];
-    const cons: string[] = insights?.cons || enrichIntel?.cons || [];
-    const competitorPrices = product.enrichment?.competitorPrices || [];
-    const cheapestComp = competitorPrices.length
-        ? competitorPrices.reduce((a: any, b: any) => (a.price < b.price ? a : b))
-        : null;
-    const pricePosition = computePricePosition(comm.retailPrice, competitorPrices);
+    const catIcon = ProductAdapter._categoryIcon(id.category);
+    const catLabel = ProductAdapter._categoryLabel(id.category);
+    const heroImage = product.visual?.heroImage || (enrich?.images && enrich.images[0]);
 
-    const stockClass = comm.stockStatus === 'Normal'
-        ? 'badge-stock'
-        : comm.stockStatus === 'Faible' ? 'badge-faible' : 'badge-rupture';
+    // ── Competitor-price delta (if enriched) ──────────────────────────────────
+    const priceDelta = useMemo(() => {
+        const cps = (enrich?.competitorPrices || []).map((c: any) => Number(c.price)).filter(n => Number.isFinite(n) && n > 0);
+        if (!cps.length || !retailPrice) return null;
+        const avg = cps.reduce((a, b) => a + b, 0) / cps.length;
+        const diff = ((retailPrice - avg) / avg) * 100;
+        return { avg, diff, n: cps.length };
+    }, [enrich?.competitorPrices, retailPrice]);
 
-    // Marketing copy from schema (unused in legacy card — now surfaced)
-    const hook = (product as any).marketing?.hookLine as string | undefined;
-    const tagline = (product as any).marketing?.tagline as string | undefined;
+    // ── Scan-strip chips (max 4) ──────────────────────────────────────────────
+    const chips = useMemo(() => {
+        const c: Array<{ label: string; type: string; title?: string }> = [];
+        if (id.category) c.push({ label: `${catIcon} ${catLabel}`, type: 'category' });
+        if (id.brand) c.push({ label: id.brand, type: 'brand' });
+        if (cardLayout.showSpecs && tech?.quickSpecs?.screenSize) c.push({ label: `${tech.quickSpecs.screenSize}"`, type: 'spec' });
+        if (cardLayout.showMarketIntel && priceDelta) {
+            const up = priceDelta.diff > 3;
+            const down = priceDelta.diff < -3;
+            c.push({
+                label: `${up ? '▲' : down ? '▼' : '●'} ${Math.abs(priceDelta.diff).toFixed(0)}% vs market`,
+                type: up ? 'price-up' : down ? 'price-down' : 'price-fair',
+                title: `Avg market: ${priceFmt.format(priceDelta.avg)} across ${priceDelta.n} sources`,
+            });
+        } else if (cardLayout.showStock) {
+            c.push({ label: `${stockQty} units`, type: 'stock' });
+        }
+        return c.slice(0, 4);
+    }, [id, catIcon, catLabel, tech, stockQty, priceDelta, priceFmt, cardLayout]);
 
-    const nextSlide = (e: React.MouseEvent) => {
-        e.stopPropagation();
-        setSlide(s => (s + 1) % gallery.length);
-    };
-    const prevSlide = (e: React.MouseEvent) => {
-        e.stopPropagation();
-        setSlide(s => (s - 1 + gallery.length) % gallery.length);
-    };
+    const hasIntel = !!(intel?.pros?.length || intel?.cons?.length || enrich?.description || enrich?.seoDescription);
+    const sourceCount = enrich?.sources?.length || 0;
+    const competitorCount = enrich?.competitorPrices?.length || 0;
+
+    // Stock percentile bar (0–20 units = 0–100%)
+    const stockPct = Math.min(100, (stockQty / 20) * 100);
+
+    // ── Live sales intelligence ──────────────────────────────────────────────
+    const [, setTick] = useState(0);
+    useEffect(() => SalesService.subscribe(() => setTick(t => t + 1)), []);
+    const salesCount = SalesService.getCached().length;
+    // Shared cache across the whole catalog — pass the full product list
+    const allProducts = inventoryStore.getState().products;
+    const velocity  = useMemo(() => getVelocityMap(allProducts).get(product.identity.id),  [allProducts, product.identity.id, salesCount]);
+    const analytics = useMemo(() => getAnalyticsMap(allProducts).get(product.identity.id), [allProducts, product.identity.id, salesCount]);
+    const showSalesRow = cardLayout.showStock && salesCount > 0 && (!!velocity || !!analytics);
 
     return (
         <motion.div
-            className="product-card pc-glass"
-            onClick={onClick}
-            data-aos="fade-up"
-            data-aos-delay={Math.min(index * 35, 350)}
-            whileHover={{ y: -4, scale: 1.012 }}
-            whileTap={{ scale: 0.995 }}
-            transition={{ type: 'spring', stiffness: 320, damping: 24 }}
+            className={`product-card-scan-layer ${expanded ? 'expanded' : ''} ${inCompare ? 'in-compare' : ''}`}
             layout
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: Math.min(index * 0.03, 0.3), type: 'spring', stiffness: 260, damping: 28 }}
+            whileHover={{ y: -3 }}
         >
-            {/* liquid glass refraction layers */}
-            <div className="pc-glass-sheen" aria-hidden />
-            <div className="pc-glass-glow" aria-hidden />
-
-            {layout.showImage && (
-                <div className="card-image-wrap">
-                    {gallery.length ? (
-                        <>
-                            <AnimatePresence initial={false} mode="wait">
-                                <motion.img
-                                    key={gallery[slide]}
-                                    src={gallery[slide]}
-                                    className="card-image"
-                                    alt={lp.name}
-                                    initial={{ opacity: 0, scale: 1.04 }}
-                                    animate={{ opacity: 1, scale: 1 }}
-                                    exit={{ opacity: 0 }}
-                                    transition={{ duration: 0.25 }}
-                                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                                />
-                            </AnimatePresence>
-                            {gallery.length > 1 && (
-                                <>
-                                    <button className="pc-slide-btn pc-slide-prev" onClick={prevSlide} aria-label="Previous">‹</button>
-                                    <button className="pc-slide-btn pc-slide-next" onClick={nextSlide} aria-label="Next">›</button>
-                                    <div className="pc-slide-dots">
-                                        {gallery.map((_, i) => (
-                                            <span key={i} className={`pc-dot ${i === slide ? 'active' : ''}`} />
-                                        ))}
-                                    </div>
-                                </>
-                            )}
-                        </>
+            {/* TOP — clickable to open modal */}
+            <div className="card-top" onClick={onClick} style={{ cursor: 'pointer' }}>
+                <div className="card-image-container">
+                    {cardLayout.showImage && heroImage ? (
+                        <img src={heroImage} alt={id.name} className="card-scan-img" loading="lazy" />
                     ) : (
-                        <div className="card-category-icon">{lp.category.icon}</div>
+                        <div className="card-scan-fallback" title={catLabel}>{catIcon}</div>
                     )}
-                    {onToggleCompare && (
-                        <button
-                            className={`pc-compare-btn ${inCompare ? 'pc-compare-active' : ''}`}
-                            onClick={(e) => { e.stopPropagation(); onToggleCompare(); }}
-                            title={inCompare ? 'Remove from compare' : 'Add to compare'}
-                        >
-                            {inCompare ? '✓ Compare' : '⚖ Compare'}
-                        </button>
-                    )}
-                    <div className="card-badges">
-                        {layout.showStock && <span className={`badge ${stockClass}`}>{comm.stockStatus}</span>}
-                        {lp.primarySpec && <span className="badge badge-spec">{lp.primarySpec}</span>}
-                        {pricePosition && (
-                            <span className={`badge pc-pos pc-pos-${pricePosition}`}>
-                                {pricePosition === 'budget' ? '💰 Budget' : pricePosition === 'premium' ? '👑 Premium' : '⚖︎ Midrange'}
+                </div>
+                {cardLayout.showStock && (
+                    <div className={`scan-status-badge ${stockStatus}`}>{stockLabel}</div>
+                )}
+                {cardLayout.showAIVerdict && (enrich?.intelligence || product.knowledge?.insights) && (
+                    <div className="scan-ai-badge" title="Enriched by AI">✨ AI</div>
+                )}
+            </div>
+
+            {/* CORE */}
+            <div className="card-core" onClick={onClick} style={{ cursor: 'pointer' }}>
+                <h3 className="scan-name" title={id.name}>{id.name}</h3>
+                <div className="scan-price-sku">
+                    {cardLayout.showPrice && <span className="scan-price">{priceFmt.format(retailPrice)}</span>}
+                    <span className="scan-sku">{id.sku || id.model || 'N/A'}</span>
+                </div>
+                {/* Stock bar */}
+                {cardLayout.showStock && (
+                    <div className="scan-stock-bar" title={`${stockQty} units`}>
+                        <div className={`scan-stock-fill ${stockStatus}`} style={{ width: `${stockPct}%` }} />
+                    </div>
+                )}
+
+                {/* Sales intelligence row — only when sales data exists */}
+                {showSalesRow && (
+                    <div className="scan-sales-row">
+                        {analytics?.tier && analytics.tier !== 'none' && (
+                            <span className={`scan-tier tv-tier-${analytics.tier}`} title={`ABC tier ${analytics.tier}`}>
+                                {analytics.tier}
                             </span>
                         )}
-                    </div>
-                    {lp.category.label && <div className="badge-panel">{lp.category.label}</div>}
-                </div>
-            )}
-
-            <div className="card-body">
-                <div className="card-brand">{lp.marque}</div>
-                <h3 className="card-name">{lp.name}</h3>
-                <div className="card-model">{lp.sku}</div>
-
-                {layout.showMarketing && (hook || tagline) && (
-                    <div className="pc-marketing" title={tagline || hook}>
-                        {hook ? `✨ ${hook}` : `📣 ${tagline}`}
-                    </div>
-                )}
-
-                {layout.showPrice && (
-                    <div className="card-commercial">
-                        <div className="card-price-row">
-                            <div className="card-price">{priceFmt.format(comm.retailPrice || 0)}</div>
-                            {layout.showStock && <div className="card-wholesale">Stock: {comm.stockQty}</div>}
-                        </div>
-                        {layout.showMarketIntel && cheapestComp && (
-                            <div className="pc-market-strip" title={`Vu sur ${cheapestComp.source}`}>
-                                <span className="pc-mi-label">Marché</span>
-                                <span className="pc-mi-price">{priceFmt.format(cheapestComp.price)}</span>
-                                <span className={`pc-mi-delta ${deltaClass(comm.retailPrice, cheapestComp.price)}`}>
-                                    {deltaLabel(comm.retailPrice, cheapestComp.price)}
-                                </span>
-                            </div>
+                        {velocity && velocity.velocity > 0 && (
+                            <span className="scan-velocity" title={`${velocity.velocity.toFixed(2)} units/day`}>
+                                {velocity.velocity.toFixed(1)}/d
+                            </span>
                         )}
-                        {product.consensus?.margin && (
-                            <div className="card-margin-bar">
-                                <div className="margin-track">
-                                    <div
-                                        className="margin-fill"
-                                        style={{
-                                            width: `${Math.min(100, (Number(product.consensus.margin.v) / 1000) * 100)}%`,
-                                            background: 'var(--accent-green, #22c55e)',
-                                        }}
-                                    />
-                                </div>
-                                <div className="margin-label">{String(product.consensus.margin.v)}</div>
+                        {velocity?.reorderSignal === 'critical' && (
+                            <span className="scan-doc tv-doc-critical">🔥 {Math.round(velocity.daysOfCover)}d</span>
+                        )}
+                        {velocity?.reorderSignal === 'warning' && (
+                            <span className="scan-doc tv-doc-warning">⚠ {Math.round(velocity.daysOfCover)}d</span>
+                        )}
+                        {velocity?.reorderSignal === 'dead' && (
+                            <span className="scan-doc tv-doc-dead">💀 stale</span>
+                        )}
+                        {analytics?.daily30?.some(v => v > 0) && (
+                            <div className="scan-spark-wrap">
+                                <Sparkline
+                                    values={analytics.daily30}
+                                    width={60}
+                                    height={16}
+                                    color={velocity && velocity.trend > 0.2 ? '#22c55e' : velocity && velocity.trend < -0.2 ? '#ef4444' : '#6366f1'}
+                                    fill={velocity && velocity.trend > 0.2 ? 'rgba(34,197,94,0.18)' : velocity && velocity.trend < -0.2 ? 'rgba(239,68,68,0.18)' : 'rgba(99,102,241,0.18)'}
+                                />
                             </div>
                         )}
                     </div>
                 )}
+            </div>
 
-                {layout.showAIVerdict && (pros.length > 0 || cons.length > 0) && (
-                    <>
-                        <button
-                            className="pc-expand-btn"
-                            onClick={(e) => { e.stopPropagation(); setExpanded(v => !v); }}
-                        >
-                            <span>🧠 Verdict IA</span>
-                            <motion.span animate={{ rotate: expanded ? 180 : 0 }} transition={{ duration: 0.2 }}>▾</motion.span>
-                        </button>
-                        <AnimatePresence initial={false}>
-                            {expanded && (
-                                <motion.div
-                                    className="pc-verdict"
-                                    initial={{ height: 0, opacity: 0 }}
-                                    animate={{ height: 'auto', opacity: 1 }}
-                                    exit={{ height: 0, opacity: 0 }}
-                                    transition={{ duration: 0.22, ease: 'easeOut' }}
-                                >
-                                    {pros.slice(0, 3).map((p, i) => (
-                                        <div key={`pro-${i}`} className="pc-verdict-row pc-pro">
-                                            <span className="pc-bullet">＋</span>{p}
-                                        </div>
-                                    ))}
-                                    {cons.slice(0, 2).map((c, i) => (
-                                        <div key={`con-${i}`} className="pc-verdict-row pc-con">
-                                            <span className="pc-bullet">−</span>{c}
-                                        </div>
-                                    ))}
-                                    {(insights as any)?.fit && (
-                                        <div className="pc-fit">{(insights as any).fit}</div>
-                                    )}
-                                </motion.div>
-                            )}
-                        </AnimatePresence>
-                    </>
-                )}
+            {/* METADATA STRIP */}
+            <div className="scan-metadata-strip">
+                {chips.map((chip, i) => (
+                    <span key={i} className={`scan-chip chip-${chip.type}`} title={chip.title}>
+                        {chip.label}
+                    </span>
+                ))}
+            </div>
 
-                {!layout.showAIVerdict && pros.length > 0 && (
-                    <div className="feature-tag" style={{ marginTop: 8, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        🧠 {pros[0]}
-                    </div>
+            {/* EXPANDABLE INTELLIGENCE */}
+            <AnimatePresence initial={false}>
+                {expanded && (
+                    <motion.div
+                        className="scan-expanded"
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.2 }}
+                    >
+                        {cardLayout.showMarketing && (enrich?.description || enrich?.seoDescription) && (
+                            <p className="scan-desc">{enrich.seoDescription || enrich.description}</p>
+                        )}
+                        {cardLayout.showAIVerdict && intel?.pros && intel.pros.length > 0 && (
+                            <div className="scan-pros">
+                                {intel.pros.slice(0, 3).map((p, i) => <span key={i}>✓ {p}</span>)}
+                            </div>
+                        )}
+                        {cardLayout.showAIVerdict && intel?.cons && intel.cons.length > 0 && (
+                            <div className="scan-cons">
+                                {intel.cons.slice(0, 2).map((p, i) => <span key={i}>⚠ {p}</span>)}
+                            </div>
+                        )}
+                        {cardLayout.showMarketIntel && competitorCount > 0 && (
+                            <div className="scan-market">
+                                📊 {competitorCount} competitor price{competitorCount > 1 ? 's' : ''}
+                                {sourceCount > 0 && ` · ${sourceCount} source${sourceCount > 1 ? 's' : ''}`}
+                            </div>
+                        )}
+                        {cardLayout.showSpecs && tech?.quickSpecs && (tech.quickSpecs.screenSize || tech.quickSpecs.refreshRate) && (
+                            <div className="scan-specs">
+                                {tech.quickSpecs.screenSize && <span>📐 {tech.quickSpecs.screenSize}"</span>}
+                                {tech.quickSpecs.refreshRate && <span>⚡ {tech.quickSpecs.refreshRate}</span>}
+                                {tech.quickSpecs.resolution?.label && <span>🖥 {tech.quickSpecs.resolution.label}</span>}
+                            </div>
+                        )}
+                    </motion.div>
                 )}
+            </AnimatePresence>
+
+            {/* ACTIONS */}
+            <div className="scan-action-zone">
+                <button
+                    className="scan-action-btn"
+                    onClick={(e) => { e.stopPropagation(); onToggleCompare?.(); }}
+                >
+                    {inCompare ? '✓ Selected' : '⚖ Compare'}
+                </button>
+                {hasIntel && (
+                    <button
+                        className="scan-action-btn"
+                        onClick={(e) => { e.stopPropagation(); setExpanded(v => !v); }}
+                        title={expanded ? 'Collapse' : 'Expand intelligence'}
+                    >
+                        {expanded ? '▲ Less' : '▼ More'}
+                    </button>
+                )}
+                <button className="scan-action-btn primary" onClick={(e) => { e.stopPropagation(); onClick(); }}>
+                    Details →
+                </button>
             </div>
         </motion.div>
     );
 };
-
-// ── helpers ──────────────────────────────────────────────────────────────────
-
-function computePricePosition(
-    our: number,
-    competitors: Array<{ price: number }> = [],
-): 'budget' | 'midrange' | 'premium' | null {
-    if (!our || competitors.length === 0) return null;
-    const prices = competitors.map(c => c.price).filter(p => typeof p === 'number' && p > 0);
-    if (!prices.length) return null;
-    const avg = prices.reduce((a, b) => a + b, 0) / prices.length;
-    if (our < avg * 0.9) return 'budget';
-    if (our > avg * 1.1) return 'premium';
-    return 'midrange';
-}
-
-function deltaClass(our: number, theirs: number): string {
-    if (!our || !theirs) return '';
-    const d = (our - theirs) / theirs;
-    if (d > 0.05) return 'pc-mi-up';
-    if (d < -0.05) return 'pc-mi-down';
-    return 'pc-mi-flat';
-}
-
-function deltaLabel(our: number, theirs: number): string {
-    if (!our || !theirs) return '';
-    const pct = Math.round(((our - theirs) / theirs) * 100);
-    if (pct === 0) return '=';
-    return pct > 0 ? `+${pct}%` : `${pct}%`;
-}

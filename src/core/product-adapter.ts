@@ -13,12 +13,23 @@ export const ProductAdapter = {
 
         // Support both the new RawProductRow and any legacy raw shape
         const id    = String(raw.id || raw.ID || raw.barcode || raw.SKU || Math.random().toString(36).substr(2, 9));
-        const name  = raw.name || raw.NAME || raw.nom || raw.Nom || raw.designation || 'Produit sans nom';
+        let name  = (raw.name || raw.NAME || raw.nom || raw.Nom || raw.designation || raw.title || raw.label || raw.description || '').trim();
         const brand = (raw.brand || raw.BRAND || raw.marque || raw.Marque || '').trim();
-        const cat   = raw.category || raw.CATEGORY || raw.categorie || raw.Catégorie || 'other';
-        const sku   = String(raw.sku || raw.SKU || raw.id || id);
-        const barcode = String(raw.barcode || raw.ean || raw.EAN || raw.upc || raw.UPC || raw.gtin || raw.GTIN || raw['Code Barre'] || '');
-        const mpn     = String(raw.mpn || raw.MPN || raw.model || raw.MODEL || '');
+        
+        // 🧠 Smart Category Detection
+        const rawCat = (raw.category || raw.CATEGORY || raw.categorie || raw.Catégorie || 'other').trim();
+        const cat = this._classifyCategory(rawCat, name);
+
+        const sku   = String(raw.sku || raw.SKU || raw.id || id).trim();
+        const barcode = String(raw.barcode || raw.ean || raw.EAN || raw.upc || raw.UPC || raw.gtin || raw.GTIN || raw['Code Barre'] || '').trim();
+        const mpn     = String(raw.mpn || raw.MPN || raw.model || raw.MODEL || '').trim();
+
+        // If name is missing, reconstruct from available metadata
+        if (!name) {
+            if (brand && mpn) name = `${brand} ${mpn}`;
+            else if (brand) name = `${brand} (Ref: ${sku})`;
+            else name = 'Produit sans nom';
+        }
 
         const brandIsExplicit = brand.length > 0;
 
@@ -198,37 +209,93 @@ export const ProductAdapter = {
         };
     },
 
+    /**
+     * 🧠 Smart Classifier
+     * Maps messy raw category strings or product names to canonical IDs.
+     */
+    _classifyCategory(raw: string, name: string): string {
+        const input = (raw + ' ' + name).toLowerCase();
+        
+        // 1. Mobile & IT
+        if (input.includes('smartphone') || input.includes('iphone') || input.includes('mobile') || input.includes('galaxy')) return 'smartphones';
+        if (input.includes('laptop') || input.includes('pc portable') || input.includes('ordinateur') || input.includes('notebook')) return 'laptops';
+        if (input.includes('tablet') || input.includes('ipad') || input.includes('tab')) return 'tablets';
+        if (input.includes('monitor') || input.includes('ecran') || input.includes('monitor')) return 'monitors';
+
+        // 2. Large Appliances
+        if (input.includes('tv') || input.includes('tele') || input.includes('television')) return 'tv';
+        if (input.includes('lavage') || input.includes('linge') || input.includes('machine a laver') || input.includes('lavante')) return 'washing_machine';
+        if (input.includes('refrigerat') || input.includes('frigo') || input.includes('combinaison')) return 'refrigerator';
+        if (input.includes('cong') || input.includes('freezer')) return 'freezer';
+        if (input.includes('clim') || input.includes('air cond')) return 'ac';
+
+        // 3. Kitchen & Small
+        if (input.includes('micro') || input.includes('onde')) return 'microwave';
+        if (input.includes('vaisselle')) return 'dishwasher';
+        if (input.includes('cuis') || input.includes('cooker')) return 'cooker';
+        if (input.includes('four') || input.includes('oven')) return 'oven';
+        if (input.includes('plaque') || input.includes('hob')) return 'cooktop';
+        if (input.includes('blender') || input.includes('mixer') || input.includes('robot')) return 'blender';
+        if (input.includes('cafet') || input.includes('espresso') || input.includes('coffee')) return 'coffee_machine';
+        if (input.includes('aspira') || input.includes('vacuum')) return 'vacuum';
+
+        // 4. Audio & Gaming
+        if (input.includes('son') || input.includes('audio') || input.includes('speaker') || input.includes('casque') || input.includes('headphone')) return 'audio';
+        if (input.includes('console') || input.includes('gaming') || input.includes('playstation') || input.includes('xbox') || input.includes('nintendo')) return 'gaming';
+
+        return raw.toLowerCase().replace(/\s+/g, '_') || 'other';
+    },
+
     _categoryIcon(cat: string): string {
         const icons: Record<string, string> = {
+            // Mobile & IT
+            smartphones: '📱', laptops: '💻', tablets: '📟', monitors: '🖥️',
+            // Large Appliances
             tv: '📺', washing_machine: '🫧', refrigerator: '🧊',
             freezer: '🧊', ac: '❄️', microwave: '📡',
-            dishwasher: '🫗', cooker: '🍳', electric_oven: '🔥',
-            builtin_oven: '🔥', cooktop: '🔥',
+            dishwasher: '🫗', cooker: '🍳', oven: '🔥',
+            electric_oven: '🔥', builtin_oven: '🔥', cooktop: '🔥',
+            // Small
             blender: '🫙', mixer: '⚙️', kettle: '☕',
             iron: '👔', vacuum: '🌀', fryer: '🍟',
             coffee_machine: '☕', toaster: '🍞',
             hair_dryer: '💨', beauty: '💅',
+            // Audio & Gaming
+            audio: '🎧', gaming: '🎮', accessories: '🔌',
             small_appliance: '🔌', other: '📦',
         };
-        return icons[cat?.toLowerCase()] || '📦';
+        const key = cat?.toLowerCase();
+        if (icons[key]) return icons[key];
+        
+        // Dynamic fallback heuristics
+        if (key.includes('phone')) return '📱';
+        if (key.includes('computer') || key.includes('pc')) return '💻';
+        if (key.includes('electro')) return '🔌';
+        
+        return '📦';
     },
 
     _categoryLabel(cat: string): string {
         const labels: Record<string, string> = {
+            smartphones: 'Smartphones', laptops: 'Laptops/PC', tablets: 'Tablettes', monitors: 'Moniteurs',
             tv: 'Télévision', washing_machine: 'Machine à Laver',
             refrigerator: 'Réfrigérateur', freezer: 'Congélateur',
             ac: 'Climatiseur', microwave: 'Micro-Ondes',
             dishwasher: 'Lave-Vaisselle', cooker: 'Cuisinière',
-            electric_oven: 'Four Électrique', builtin_oven: 'Four Encastrable',
+            oven: 'Four', electric_oven: 'Four Électrique', builtin_oven: 'Four Encastrable',
             cooktop: 'Plaque Chauffante', blender: 'Blender',
             mixer: 'Batteur/Pétrin', kettle: 'Bouilloire',
             iron: 'Fer à Repasser', vacuum: 'Aspirateur',
             fryer: 'Friteuse', coffee_machine: 'Cafetière',
             toaster: 'Toaster', hair_dryer: 'Sèche-Cheveux',
-            beauty: 'Beauté & Soin', small_appliance: 'Petit Électroménager',
-            other: 'Autre',
+            beauty: 'Beauté & Soin', audio: 'Audio & Son', gaming: 'Gaming',
+            small_appliance: 'Petit Électroménager', other: 'Autre',
         };
-        return labels[cat?.toLowerCase()] || cat || 'Autre';
+        const key = cat?.toLowerCase();
+        if (labels[key]) return labels[key];
+        
+        // Prettify unknown keys: "washing_machine" -> "Washing Machine"
+        return cat?.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ') || 'Autre';
     },
 
     _normalizeStockStatus(raw: string): string {

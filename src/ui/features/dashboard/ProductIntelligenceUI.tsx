@@ -3,6 +3,7 @@ import { Product } from '../../../core/schema';
 import { ProductAdapter } from '../../../core/product-adapter';
 import { LLMService } from '../../../services/llm';
 import { inventoryStore } from '../../../state/store';
+import { useSettings } from '../settings/useSettings';
 
 /**
  * Adaptive UI Component for PKOS - Powered by Tambo AI.
@@ -30,19 +31,23 @@ const InsightsBlock = ({ pros, cons, buyerFit }: { pros: string[], cons: string[
             <div className="intel-buyer-text" style={{ fontSize: '0.9rem', color: '#fff' }}>{buyerFit}</div>
         </div>
         <div className="pros-cons-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-            <div className="pros-panel" style={{ padding: '12px', borderRadius: '12px', background: 'rgba(34, 197, 94, 0.05)' }}>
-                <div className="pros-title" style={{ color: '#22c55e', fontWeight: 700, marginBottom: '8px' }}>✅ Avantages</div>
-                {pros.map((x, i) => <div key={i} style={{ fontSize: '0.85rem', marginBottom: '4px' }}>✔ {x}</div>)}
-            </div>
-            <div className="cons-panel" style={{ padding: '12px', borderRadius: '12px', background: 'rgba(239, 68, 68, 0.05)' }}>
-                <div className="cons-title" style={{ color: '#ef4444', fontWeight: 700, marginBottom: '8px' }}>⚠️ Faiblesses</div>
-                {cons.map((x, i) => <div key={i} style={{ fontSize: '0.85rem', marginBottom: '4px' }}>✖ {x}</div>)}
-            </div>
+            {pros.length > 0 && (
+                <div className="pros-panel" style={{ padding: '12px', borderRadius: '12px', background: 'rgba(34, 197, 94, 0.05)' }}>
+                    <div className="pros-title" style={{ color: '#22c55e', fontWeight: 700, marginBottom: '8px' }}>✅ Avantages</div>
+                    {pros.map((x, i) => <div key={i} style={{ fontSize: '0.85rem', marginBottom: '4px' }}>✔ {x}</div>)}
+                </div>
+            )}
+            {cons.length > 0 && (
+                <div className="cons-panel" style={{ padding: '12px', borderRadius: '12px', background: 'rgba(239, 68, 68, 0.05)' }}>
+                    <div className="cons-title" style={{ color: '#ef4444', fontWeight: 700, marginBottom: '8px' }}>⚠️ Faiblesses</div>
+                    {cons.map((x, i) => <div key={i} style={{ fontSize: '0.85rem', marginBottom: '4px' }}>✖ {x}</div>)}
+                </div>
+            )}
         </div>
     </div>
 );
 
-const PricingBlock = ({ prices, retailPrice }: { prices: any[], retailPrice: number }) => (
+const PricingBlock = ({ prices, retailPrice, priceFmt }: { prices: any[], retailPrice: number, priceFmt: Intl.NumberFormat }) => (
     <div className="modal-section" style={{ marginBottom: '24px' }}>
         <div className="modal-section-title" style={{ fontSize: '0.75rem', color: '#9898a8', marginBottom: '12px', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '4px' }}>
             📊 Prix Concurrence 
@@ -58,7 +63,7 @@ const PricingBlock = ({ prices, retailPrice }: { prices: any[], retailPrice: num
                 return (
                     <div key={i} className="comp-row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', padding: '10px 16px', borderTop: '1px solid rgba(255,255,255,0.05)', fontSize: '0.85rem', alignItems: 'center' }}>
                         <span>{c.source}</span>
-                        <span style={{ fontWeight: 600 }}>{new Intl.NumberFormat('fr-DZ', { style: 'currency', currency: 'DZD', maximumFractionDigits: 0 }).format(c.price)}</span>
+                        <span style={{ fontWeight: 600 }}>{priceFmt.format(c.price)}</span>
                         <span style={{ color: diff > 0 ? '#22c55e' : '#ef4444', fontWeight: 700 }}>{diff > 0 ? '+' : ''}{pct}%</span>
                     </div>
                 );
@@ -68,24 +73,24 @@ const PricingBlock = ({ prices, retailPrice }: { prices: any[], retailPrice: num
 );
 
 export const ProductIntelligenceUI = ({ product }: { product: Product }) => {
+    const settings = useSettings();
+    const { currency, language } = settings.locale;
+    const { cardLayout } = settings;
+
     const [isEnriching, setIsEnriching] = useState(false);
     const [enrichError, setEnrichError] = useState<string | null>(null);
 
     const lp = ProductAdapter.toLegacy(product);
-    const enrichment = product.knowledge?.insights;
+    const enrichment = product.knowledge?.insights || product.enrichment?.intelligence;
     const competitorPrices = product.enrichment?.competitorPrices;
     const consensusSpecs = product.consensus;
 
-    const thickness = useMemo(() => {
-        let score = 0;
-        if (product.identity.id) score++;
-        if (consensusSpecs && Object.keys(consensusSpecs).length > 5) score++;
-        if (enrichment) score++;
-        if (product.enrichment?.competitorPrices && product.enrichment.competitorPrices.length > 0) score++;
-        return Math.min(score, 3);
-    }, [product, enrichment, consensusSpecs]);
+    const priceFmt = useMemo(
+        () => new Intl.NumberFormat(language, { style: 'currency', currency, maximumFractionDigits: 0 }),
+        [language, currency],
+    );
 
-    const formattedPrice = new Intl.NumberFormat('fr-DZ', { style: 'currency', currency: 'DZD', maximumFractionDigits: 0 }).format(lp.commercial.retailPrice);
+    const formattedPrice = priceFmt.format(lp.commercial.retailPrice);
 
     const handleEnrich = async () => {
         setIsEnriching(true);
@@ -105,6 +110,13 @@ export const ProductIntelligenceUI = ({ product }: { product: Product }) => {
             if (result.description) {
                 updated.enrichment.seoDescription = result.description;
             }
+            if (result.images && result.images.length) {
+                const existing = updated.enrichment.images || [];
+                updated.enrichment.images = [...new Set([...existing, ...result.images])].slice(0, 12);
+            }
+            if (result._sourceLinks && result._sourceLinks.length) {
+                updated.enrichment.sources = result._sourceLinks.slice(0, 10);
+            }
             if (result.specs) {
                 updated.consensus = updated.consensus || {};
                 Object.entries(result.specs).forEach(([k, v]) => {
@@ -121,6 +133,8 @@ export const ProductIntelligenceUI = ({ product }: { product: Product }) => {
             setIsEnriching(false);
         }
     };
+
+    const heroImage = product.visual?.heroImage || (product.enrichment?.images && product.enrichment.images[0]);
 
     return (
         <div className="tambo-adaptive-container" style={{ color: '#fff' }}>
@@ -141,11 +155,12 @@ export const ProductIntelligenceUI = ({ product }: { product: Product }) => {
                     ⚠️ {enrichError}
                 </div>
             )}
+
             {/* Image Showcase */}
-            {product.enrichment?.images && product.enrichment.images.length > 0 && (
+            {cardLayout.showImage && heroImage && (
                 <div className="modal-image-showcase" style={{ marginBottom: '24px', borderRadius: '16px', overflow: 'hidden', height: '220px', background: '#000', position: 'relative' }}>
                     <img
-                        src={product.enrichment.images[0]}
+                        src={heroImage}
                         style={{ width: '100%', height: '100%', objectFit: 'contain' }}
                         alt={lp.name}
                     />
@@ -189,10 +204,18 @@ export const ProductIntelligenceUI = ({ product }: { product: Product }) => {
             <div className="modal-section" style={{ marginBottom: '24px' }}>
                 <div className="modal-section-title">💰 Information Commerciale</div>
                 <div className="commercial-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                    <div className="comm-card" style={{ padding: '16px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                        <div className="comm-label">Prix Détail</div>
-                        <div className="comm-value comm-big" style={{ fontSize: '1.4rem', fontWeight: 800 }}>{formattedPrice}</div>
-                    </div>
+                    {cardLayout.showPrice && (
+                        <div className="comm-card" style={{ padding: '16px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                            <div className="comm-label">Prix Détail</div>
+                            <div className="comm-value comm-big" style={{ fontSize: '1.4rem', fontWeight: 800 }}>{formattedPrice}</div>
+                        </div>
+                    )}
+                    {cardLayout.showStock && (
+                        <div className="comm-card" style={{ padding: '16px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                            <div className="comm-label">Stock Quantité</div>
+                            <div className="comm-value comm-big" style={{ fontSize: '1.4rem', fontWeight: 800 }}>{lp.commercial.stockQty} units</div>
+                        </div>
+                    )}
                     <div className="comm-card" style={{ padding: '16px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
                         <div className="comm-label">Marge</div>
                         <div className="comm-value comm-big" style={{ fontSize: '1.4rem', fontWeight: 800, color: '#22c55e' }}>{lp.commercial.margin}%</div>
@@ -200,27 +223,37 @@ export const ProductIntelligenceUI = ({ product }: { product: Product }) => {
                 </div>
             </div>
 
+            {/* Marketing Section */}
+            {cardLayout.showMarketing && (product.enrichment?.seoDescription || product.enrichment?.description) && (
+                <div className="modal-section" style={{ marginBottom: '24px' }}>
+                    <div className="modal-section-title">📝 Description Marketing</div>
+                    <p style={{ fontSize: '0.9rem', color: '#ccc', lineHeight: 1.6 }}>
+                        {product.enrichment.seoDescription || product.enrichment.description}
+                    </p>
+                </div>
+            )}
+
             {/* Intelligence Section */}
-            {enrichment && (
+            {cardLayout.showAIVerdict && enrichment && (
                 <div style={{ border: '1px solid rgba(124, 77, 255, 0.15)', borderRadius: '16px', padding: '16px', marginBottom: '16px', background: 'rgba(124, 77, 255, 0.03)' }}>
                     <InsightsBlock
-                        pros={enrichment.pros}
-                        cons={enrichment.cons}
-                        buyerFit={enrichment.fit}
+                        pros={enrichment.pros || []}
+                        cons={enrichment.cons || []}
+                        buyerFit={enrichment.fit || enrichment.verdict || 'Analyse en attente...'}
                     />
                 </div>
             )}
 
             {/* Specs Section */}
-            {consensusSpecs && (
+            {cardLayout.showSpecs && consensusSpecs && (
                 <div style={{ border: '1px solid rgba(255, 255, 255, 0.05)', borderRadius: '16px', padding: '16px', marginBottom: '16px', background: 'rgba(255, 255, 255, 0.02)' }}>
                     <SpecsBlock specs={Object.fromEntries(Object.entries(consensusSpecs).map(([k, v]) => [k, (v as any).v]))} />
                 </div>
             )}
 
             {/* Competitor Prices */}
-            {competitorPrices && competitorPrices.length > 0 && (
-                <PricingBlock prices={competitorPrices} retailPrice={lp.commercial.retailPrice} />
+            {cardLayout.showMarketIntel && competitorPrices && competitorPrices.length > 0 && (
+                <PricingBlock prices={competitorPrices} retailPrice={lp.commercial.retailPrice} priceFmt={priceFmt} />
             )}
         </div>
     );

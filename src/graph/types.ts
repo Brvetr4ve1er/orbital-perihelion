@@ -70,9 +70,9 @@ export interface SimulationConfig {
 export const DEFAULT_SIM_CONFIG: SimulationConfig = {
   alphaDecay: 0.02,
   velocityDecay: 0.4,
-  chargeStrength: -180,
-  linkDistance: 80,
-  collisionMultiplier: 1.4,
+  chargeStrength: -160,
+  linkDistance: 70,
+  collisionMultiplier: 1.1,
   enableCollision: true,
 };
 
@@ -93,7 +93,7 @@ export interface RenderConfig {
 }
 
 export const DEFAULT_RENDER_CONFIG: RenderConfig = {
-  svgThreshold: 5000,
+  svgThreshold: 400,
   lodFar: 0.25,
   lodMid: 0.6,
   lodClose: 1.0,

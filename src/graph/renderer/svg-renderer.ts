@@ -42,6 +42,11 @@ export class SVGRenderer {
   private width: number;
   private height: number;
 
+  // Cached selections for performance
+  private cachedNodeSel: d3Selection.Selection<SVGCircleElement, GraphNode, SVGGElement, unknown> | null = null;
+  private cachedLinkLabelSel: d3Selection.Selection<SVGTextElement, GraphNode, SVGGElement, unknown> | null = null;
+  private cachedLinkSel: d3Selection.Selection<SVGPathElement, GraphLink, SVGGElement, unknown> | null = null;
+
   // Callbacks set by the hook
   onZoomChange?: (t: { x: number; y: number; k: number }) => void;
   onNodeHover?: (id: string | null) => void;
@@ -62,6 +67,9 @@ export class SVGRenderer {
     this.currentTransform = d3Zoom.zoomIdentity;
 
     this.svg = d3Selection.select(svgEl);
+    // Critical: wipe any prior SVG content so remounts don't stack <g> layers
+    // (this was the source of ghosting/duplicated nodes across filter changes)
+    this.svg.selectAll('*').remove();
     this.svg
       .attr('width', width)
       .attr('height', height)
@@ -124,7 +132,9 @@ export class SVGRenderer {
         .attr('fill', 'none')
         .attr('stroke-linecap', 'round');
 
-      linkSel.merge(linkEnter)
+      this.cachedLinkSel = linkSel.merge(linkEnter);
+      
+      this.cachedLinkSel
         .attr('stroke', (d) => {
           const src = d.source as GraphNode;
           if (interaction.hoveredNodeId &&
@@ -154,6 +164,7 @@ export class SVGRenderer {
       linkSel.exit().remove();
     } else {
       this.linkLayer.selectAll('*').remove();
+      this.cachedLinkSel = null;
     }
 
     // ─── Nodes ────────────────────────────────────────────────────────────────
@@ -177,7 +188,9 @@ export class SVGRenderer {
         this.onNodeClick?.(d.id);
       });
 
-    nodeSel.merge(nodeEnter)
+    this.cachedNodeSel = nodeSel.merge(nodeEnter);
+
+    this.cachedNodeSel
       .attr('cx', (d) => d.x ?? 0)
       .attr('cy', (d) => d.y ?? 0)
       .attr('r', (d) => nodeRadius(d, this.cfg))
@@ -230,7 +243,9 @@ export class SVGRenderer {
         .attr('font-size', 10)
         .attr('fill', '#e2e8f0');
 
-      labelSel.merge(labelEnter)
+      this.cachedLinkLabelSel = labelSel.merge(labelEnter);
+      
+      this.cachedLinkLabelSel
         .attr('x', (d) => d.x ?? 0)
         .attr('y', (d) => (d.y ?? 0) + nodeRadius(d, this.cfg) + 12)
         .attr('opacity', (d) => {
@@ -271,21 +286,22 @@ export class SVGRenderer {
 
   /** Fast position-only update — called on every simulation tick */
   updatePositions(nodes: GraphNode[], links: GraphLink[]) {
-    this.nodeLayer
-      .selectAll<SVGCircleElement, GraphNode>('circle.node')
-      .data(nodes.filter(n => !n.hidden), (d) => d.id)
-      .attr('cx', (d) => d.x ?? 0)
-      .attr('cy', (d) => d.y ?? 0);
+    if (this.cachedNodeSel) {
+      this.cachedNodeSel
+        .attr('cx', (d) => d.x ?? 0)
+        .attr('cy', (d) => d.y ?? 0);
+    }
 
-    this.labelLayer
-      .selectAll<SVGTextElement, GraphNode>('text.label')
-      .data(nodes.filter(n => !n.hidden), (d) => d.id)
-      .attr('x', (d) => d.x ?? 0)
-      .attr('y', (d) => (d.y ?? 0) + nodeRadius(d, this.cfg) + 12);
+    if (this.cachedLinkLabelSel) {
+      this.cachedLinkLabelSel
+        .attr('x', (d) => d.x ?? 0)
+        .attr('y', (d) => (d.y ?? 0) + nodeRadius(d, this.cfg) + 12);
+    }
 
-    this.linkLayer
-      .selectAll<SVGPathElement, GraphLink>('path.link')
-      .attr('d', (d) => this._curvePath(d));
+    if (this.cachedLinkSel) {
+      this.cachedLinkSel
+        .attr('d', (d) => this._curvePath(d));
+    }
   }
 
   resize(w: number, h: number) {

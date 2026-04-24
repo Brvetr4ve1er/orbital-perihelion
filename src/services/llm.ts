@@ -40,6 +40,29 @@ export const LLMService = {
         localStorage.setItem('pkos_llm_key', key);
     },
 
+    // ── Saved presets (multiple endpoints) ─────────────────────
+    // Store a list of named (url, model, key) tuples in localStorage so users
+    // can hop between e.g. "Ollama laptop" and "LM Studio office" instantly.
+    getPresets(): Array<{ name: string; url: string; model: string; key: string }> {
+        try {
+            return JSON.parse(localStorage.getItem('pkos_llm_presets') || '[]');
+        } catch { return []; }
+    },
+    savePreset(name: string) {
+        const list = this.getPresets().filter(p => p.name !== name);
+        list.push({ name, ...config });
+        localStorage.setItem('pkos_llm_presets', JSON.stringify(list));
+    },
+    deletePreset(name: string) {
+        const list = this.getPresets().filter(p => p.name !== name);
+        localStorage.setItem('pkos_llm_presets', JSON.stringify(list));
+    },
+    loadPreset(name: string) {
+        const p = this.getPresets().find(x => x.name === name);
+        if (p) this.setConfig(p.url, p.model, p.key);
+        return p;
+    },
+
     // ── Ping / connectivity check ──────────────────────────────
     async ping(): Promise<{ online: boolean; error?: string }> {
         try {

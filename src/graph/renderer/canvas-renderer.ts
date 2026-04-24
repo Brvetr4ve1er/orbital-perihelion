@@ -176,7 +176,14 @@ export class CanvasRenderer {
     // ─── Links ────────────────────────────────────────────────────────────────
     if (k >= lodFar) {
       ctx.save();
-      // Batch draw by opacity level
+      // Optimization: Batch drawing links by style
+      // Style 1: Normal/Low-alpha links
+      ctx.beginPath();
+      ctx.strokeStyle = hovId ? 'rgba(148,163,184,0.06)' : 'rgba(148,163,184,0.15)';
+      ctx.lineWidth = 0.8;
+      
+      const highlitLinks: GraphLink[] = [];
+
       for (const link of this.links) {
         if (link.hidden) continue;
         const s = link.source as GraphNode;
@@ -185,27 +192,47 @@ export class CanvasRenderer {
         if (k < lodMid && link.strength === 'weak') continue;
 
         const isHighlighted = hovId && (s.id === hovId || t.id === hovId);
-        const dx = t.x - s.x, dy = t.y - s.y;
-        const dr = Math.sqrt(dx * dx + dy * dy) * 0.6;
+        if (isHighlighted || link.strength === 'strong') {
+          highlitLinks.push(link);
+          continue;
+        }
 
-        ctx.beginPath();
+        const mx = (s.x + t.x) / 2 + (t.y - s.y) * 0.15;
+        const my = (s.y + t.y) / 2 - (t.x - s.x) * 0.15;
         ctx.moveTo(s.x, s.y);
-        // Quadratic arc approximation for perf
-        const mx = (s.x + t.x) / 2 + dy * 0.2;
-        const my = (s.y + t.y) / 2 - dx * 0.2;
         ctx.quadraticCurveTo(mx, my, t.x, t.y);
+      }
+      ctx.stroke();
 
-        if (isHighlighted) {
-          ctx.strokeStyle = 'rgba(165,180,252,0.9)';
-          ctx.lineWidth = link.strength === 'strong' ? 2.5 : 1.5;
-        } else if (hovId) {
-          ctx.strokeStyle = 'rgba(148,163,184,0.06)';
-          ctx.lineWidth = 0.8;
-        } else {
-          ctx.strokeStyle = link.strength === 'strong'
-            ? 'rgba(148,163,184,0.35)'
-            : 'rgba(148,163,184,0.15)';
-          ctx.lineWidth = link.strength === 'strong' ? 1.5 : 0.8;
+      // Style 2: Strong links
+      ctx.beginPath();
+      ctx.strokeStyle = hovId ? 'rgba(148,163,184,0.1)' : 'rgba(148,163,184,0.35)';
+      ctx.lineWidth = 1.5;
+      for (const link of highlitLinks) {
+        if (link.strength !== 'strong') continue;
+        const s = link.source as unknown as GraphNode;
+        const t = link.target as unknown as GraphNode;
+        const mx = (s.x! + t.x!) / 2 + (t.y! - s.y!) * 0.15;
+        const my = (s.y! + t.y!) / 2 - (t.x! - s.x!) * 0.15;
+        ctx.moveTo(s.x!, s.y!);
+        ctx.quadraticCurveTo(mx, my, t.x!, t.y!);
+      }
+      ctx.stroke();
+
+      // Style 3: Highlighted (hovered) connections
+      if (hovId) {
+        ctx.beginPath();
+        ctx.strokeStyle = 'rgba(165,180,252,0.95)';
+        ctx.lineWidth = 2.0;
+        for (const link of highlitLinks) {
+          if (hovId && ((link.source as any).id === hovId || (link.target as any).id === hovId)) {
+            const s = link.source as any;
+            const t = link.target as any;
+            const mx = (s.x + t.x) / 2 + (t.y - s.y) * 0.15;
+            const my = (s.y + t.y) / 2 - (t.x - s.x) * 0.15;
+            ctx.moveTo(s.x, s.y);
+            ctx.quadraticCurveTo(mx, my, t.x, t.y);
+          }
         }
         ctx.stroke();
       }

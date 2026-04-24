@@ -1,6 +1,5 @@
 import { Product } from './schema';
 import { UniversalCSVParser } from './universal-csv-parser';
-import { PKOSCsvParser } from './pkos-csv-parser';
 import { ProductAdapter } from './product-adapter';
 
 /**
@@ -32,11 +31,4 @@ export const Parser = {
         console.log(`[Parser] Extracted ${rows.length} rows → normalizing to CPO...`);
         return rows.map(row => ProductAdapter.fromRawRow(row));
     },
-
-    /**
-     * Exports a list of products back to PKOS CSV format.
-     */
-    export(products: Product[]): string {
-        return PKOSCsvParser.exportCSV(products);
-    }
 };

@@ -4,6 +4,7 @@ import AOS from 'aos';
 import 'aos/dist/aos.css';
 import { App } from './ui/App';
 import './index.css';
+import './ui/styles/shopify-ux.css';
 import './graph/graph.css';
 
 AOS.init({

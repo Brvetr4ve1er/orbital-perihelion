@@ -1,17 +1,31 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, lazy, Suspense } from 'react';
 import { inventoryStore } from '../../../state/store';
 import { Engine } from '../../../core/engine';
 import { KPIStrip } from '../../components/KPIStrip';
-import { FilterBar } from '../../components/FilterBar';
+import { FilterBar, SortMode } from '../../components/FilterBar';
 import { ProductCard } from '../../components/ProductCard';
 import { ProductIntelligenceUI } from './ProductIntelligenceUI';
-import { TreeView } from './TreeView';
-import { CompareView } from './CompareView';
 import { ErrorBoundary } from '../../components/ErrorBoundary';
-import { TableView } from './TableView';
-import { GraphView } from '../../../graph/components/GraphView';
-import { projectProductsToGraph } from '../../../services/graph-projection';
+import { ReorderRadar } from '../../components/ReorderRadar';
+import { DeadStock } from '../../components/DeadStock';
+import { SalesKPIStrip } from '../../components/SalesKPIStrip';
+import { RevenueChart } from '../../components/RevenueChart';
+import { CategoryLeaderboard } from '../../components/CategoryLeaderboard';
+import { InsightsFeed } from '../../components/InsightsFeed';
 import { Product } from '../../../core/schema';
+
+// Heavy / tab-specific views — code-split so the initial grid paint stays cheap.
+const TableView   = lazy(() => import('./TableView').then(m => ({ default: m.TableView })));
+const TreeView    = lazy(() => import('./TreeView').then(m => ({ default: m.TreeView })));
+const CompareView = lazy(() => import('./CompareView').then(m => ({ default: m.CompareView })));
+const GraphView   = lazy(() => import('../../../graph/components/GraphView').then(m => ({ default: m.GraphView })));
+
+const ViewFallback = () => (
+    <div className="view-fallback">
+        <div className="loading-spinner" />
+        <p>Loading view…</p>
+    </div>
+);
 
 type ViewMode = 'grid' | 'tree' | 'graph' | 'table' | 'compare';
 
@@ -30,6 +44,7 @@ export const Dashboard = () => {
     const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
     const [view, setView] = useState<ViewMode>('grid');
     const [compareIds, setCompareIds] = useState<string[]>([]);
+    const [sortBy, setSortBy] = useState<SortMode>('smart');
 
     useEffect(() => {
         return inventoryStore.subscribe((newState) => {
@@ -44,19 +59,43 @@ export const Dashboard = () => {
     }, []);
 
     const filteredProducts = useMemo(() => {
-        return Engine.filterProducts(
+        const base = Engine.filterProducts(
             state.products,
             state.searchQuery,
             state.activeFilters
         );
-    }, [state.products, state.searchQuery, state.activeFilters]);
+        if (sortBy === 'smart') return base;
+        const stockOf = (p: Product) => (p.observations?.stock?.[0]?.v as number) ?? 0;
+        const priceOf = (p: Product) => p.commercial?.priceRange?.typical || 0;
+        const marginOf = (p: Product) =>
+            (p.commercial?.priceRange?.typical || 0) - (p.commercial?.priceRange?.min || 0);
+        const sorted = [...base];
+        sorted.sort((a, b) => {
+            switch (sortBy) {
+                case 'name':        return (a.identity.name || '').localeCompare(b.identity.name || '');
+                case 'price_asc':   return priceOf(a) - priceOf(b);
+                case 'price_desc':  return priceOf(b) - priceOf(a);
+                case 'stock_asc':   return stockOf(a) - stockOf(b);
+                case 'stock_desc':  return stockOf(b) - stockOf(a);
+                case 'margin_desc': return marginOf(b) - marginOf(a);
+                default:            return 0;
+            }
+        });
+        return sorted;
+    }, [state.products, state.searchQuery, state.activeFilters, sortBy]);
 
     const stats = useMemo(() => Engine.calculateStats(state.products), [state.products]);
 
-    const graphData = useMemo(
-        () => (view === 'graph' ? projectProductsToGraph(filteredProducts) : null),
-        [view, filteredProducts]
-    );
+    // Graph projection is lazy-loaded with the GraphView, so we defer its import too.
+    const [graphData, setGraphData] = useState<any>(null);
+    useEffect(() => {
+        if (view !== 'graph') { setGraphData(null); return; }
+        let cancel = false;
+        import('../../../services/graph-projection').then(m => {
+            if (!cancel) setGraphData(m.projectProductsToGraph(filteredProducts));
+        });
+        return () => { cancel = true; };
+    }, [view, filteredProducts]);
 
     const toggleCompare = useCallback((id: string) => {
         setCompareIds(prev => {
@@ -74,12 +113,26 @@ export const Dashboard = () => {
         <div className="dashboard">
             {stats && <KPIStrip stats={stats} />}
 
+            <SalesKPIStrip products={state.products} />
+
+            <InsightsFeed products={state.products} onPickProduct={setSelectedProduct} />
+
+            <RevenueChart products={state.products} />
+
+            <div className="intel-panels intel-panels-3">
+                <ReorderRadar products={state.products} onPickProduct={setSelectedProduct} />
+                <DeadStock products={state.products} onPickProduct={setSelectedProduct} />
+                <CategoryLeaderboard products={state.products} />
+            </div>
+
             <FilterBar
                 searchQuery={state.searchQuery}
                 setSearchQuery={(q) => inventoryStore.setSearchQuery(q)}
                 activeFilters={state.activeFilters}
                 setFilters={(f) => inventoryStore.setFilters(f)}
                 stats={stats}
+                sortBy={sortBy}
+                setSortBy={setSortBy}
             />
 
             <div className="view-switcher">
@@ -125,34 +178,42 @@ export const Dashboard = () => {
             )}
 
             {view === 'table' && (
-                <TableView
-                    products={filteredProducts}
-                    onSelect={setSelectedProduct}
-                    compareIds={compareIds}
-                    onToggleCompare={toggleCompare}
-                />
+                <Suspense fallback={<ViewFallback />}>
+                    <TableView
+                        products={filteredProducts}
+                        onSelect={setSelectedProduct}
+                        compareIds={compareIds}
+                        onToggleCompare={toggleCompare}
+                    />
+                </Suspense>
             )}
 
             {view === 'tree' && (
-                <TreeView products={filteredProducts} onSelect={setSelectedProduct} />
+                <Suspense fallback={<ViewFallback />}>
+                    <TreeView products={filteredProducts} onSelect={setSelectedProduct} />
+                </Suspense>
             )}
 
             {view === 'graph' && graphData && (
                 <div className="graph-mount">
                     <ErrorBoundary>
-                        <GraphView data={graphData} />
+                        <Suspense fallback={<ViewFallback />}>
+                            <GraphView data={graphData} />
+                        </Suspense>
                     </ErrorBoundary>
                 </div>
             )}
 
             {view === 'compare' && (
-                <CompareView
-                    products={state.products}
-                    compareIds={compareIds}
-                    onRemove={(id) => setCompareIds(prev => prev.filter(x => x !== id))}
-                    onClearAll={clearCompare}
-                    onSwitchToGrid={() => setView('grid')}
-                />
+                <Suspense fallback={<ViewFallback />}>
+                    <CompareView
+                        products={state.products}
+                        compareIds={compareIds}
+                        onRemove={(id) => setCompareIds(prev => prev.filter(x => x !== id))}
+                        onClearAll={clearCompare}
+                        onSwitchToGrid={() => setView('grid')}
+                    />
+                </Suspense>
             )}
 
             {selectedProduct && (
