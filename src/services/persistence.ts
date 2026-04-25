@@ -50,24 +50,89 @@ export async function getDB(): Promise<IDBPDatabase | null> {
 export const Persistence = {
     /**
      * Saves all products to IndexedDB, replacing existing data.
-     * Falls back to localStorage if IDB is unavailable.
+     * Used ONLY for full imports where the entire catalog is being replaced.
+     * For incremental mutations (delete, price adjust), use deleteMany/putMany.
      */
     async saveAll(products: Product[]): Promise<void> {
         const db = await getDB();
         if (db) {
-            const tx = db.transaction(STORE_PRODUCTS, 'readwrite');
-            // Clear the store first, then write fresh
-            await tx.store.clear();
-            await Promise.all(products.map(p => tx.store.put(p)));
-            await tx.done;
-            // Write a metadata entry with the save timestamp
-            await db.put(STORE_META, new Date().toISOString(), 'lastSaved');
+            try {
+                const tx = db.transaction(STORE_PRODUCTS, 'readwrite');
+                await tx.store.clear();
+                await Promise.all(products.map(p => tx.store.put(p)));
+                await tx.done;
+                await db.put(STORE_META, new Date().toISOString(), 'lastSaved');
+            } catch (e: any) {
+                if (e?.name === 'QuotaExceededError' || e?.message?.includes('quota')) {
+                    console.error(`[Persistence] IndexedDB quota exceeded while saving ${products.length} products.`);
+                } else {
+                    console.error('[Persistence] saveAll failed:', e);
+                }
+            }
         } else {
-            // localStorage fallback
             try {
                 localStorage.setItem('pkos_inventory', JSON.stringify(products));
             } catch (e) {
                 console.error('[Persistence] localStorage quota exceeded:', e);
+            }
+        }
+    },
+
+    /**
+     * Deletes specific products by ID. Safe: never touches other records.
+     * Falls back to full rewrite in localStorage mode.
+     */
+    async deleteMany(ids: string[]): Promise<void> {
+        if (!ids.length) return;
+        const db = await getDB();
+        if (db) {
+            try {
+                const tx = db.transaction(STORE_PRODUCTS, 'readwrite');
+                await Promise.all(ids.map(id => tx.store.delete(id)));
+                await tx.done;
+            } catch (e) {
+                console.error('[Persistence] deleteMany failed:', e);
+            }
+        } else {
+            // localStorage fallback: full rewrite (unavoidable)
+            try {
+                const raw = localStorage.getItem('pkos_inventory');
+                const all: Product[] = raw ? JSON.parse(raw) : [];
+                const idSet = new Set(ids);
+                localStorage.setItem('pkos_inventory', JSON.stringify(all.filter(p => !idSet.has(p.identity.id))));
+            } catch (e) {
+                console.error('[Persistence] localStorage deleteMany failed:', e);
+            }
+        }
+    },
+
+    /**
+     * Upserts multiple products without clearing. Safe for bulk price adjustments.
+     */
+    async putMany(products: Product[]): Promise<void> {
+        if (!products.length) return;
+        const db = await getDB();
+        if (db) {
+            try {
+                const tx = db.transaction(STORE_PRODUCTS, 'readwrite');
+                await Promise.all(products.map(p => tx.store.put(p)));
+                await tx.done;
+            } catch (e: any) {
+                if (e?.name === 'QuotaExceededError' || e?.message?.includes('quota')) {
+                    console.error(`[Persistence] IndexedDB quota exceeded on putMany (${products.length} items).`);
+                } else {
+                    console.error('[Persistence] putMany failed:', e);
+                }
+            }
+        } else {
+            try {
+                const raw = localStorage.getItem('pkos_inventory');
+                const existing: Product[] = raw ? JSON.parse(raw) : [];
+                const updateMap = new Map(products.map(p => [p.identity.id, p]));
+                const merged = existing.map(p => updateMap.get(p.identity.id) || p);
+                localStorage.setItem('pkos_inventory', JSON.stringify(merged));
+            } catch (e) {
+                console.error('[Persistence] localStorage putMany failed:', e);
             }
         }
     },
@@ -118,7 +183,18 @@ export const Persistence = {
     async updateOne(product: Product): Promise<void> {
         const db = await getDB();
         if (db) {
-            await db.put(STORE_PRODUCTS, product);
+            try {
+                await db.put(STORE_PRODUCTS, product);
+            } catch (e: any) {
+                if (e?.name === 'QuotaExceededError' || e?.message?.includes('quota')) {
+                    console.error(
+                        `[Persistence] IndexedDB quota exceeded on updateOne for ${product.identity?.name}. ` +
+                        `Product enrichment data may be too large.`
+                    );
+                } else {
+                    console.error('[Persistence] updateOne failed:', e);
+                }
+            }
         } else {
             // For localStorage fallback, we have to rewrite the whole array
             const all = await this.loadAll();

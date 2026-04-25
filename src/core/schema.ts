@@ -141,12 +141,26 @@ export const ProductSchema = z.object({
     enrichment: z.object({
         description: z.string().optional(),
         seoDescription: z.string().optional(),
-        competitorPrices: z.array(z.any()).optional(),
+        competitorPrices: z.array(z.object({
+            source: z.string(),
+            url: z.string().optional(),
+            price: z.number(),
+            currency: z.string().optional(),
+            availability: z.string().optional(),
+            lastChecked: z.string().optional(),
+        })).optional(),
         images: z.array(z.string()).optional(),
+        videos: z.array(z.object({
+            url: z.string(),
+            platform: z.string(),
+            thumbnail: z.string().optional(),
+        })).optional(),
         sources: z.array(z.object({
             title: z.string().optional(),
             url: z.string(),
             snippet: z.string().optional(),
+            domain: z.string().optional(),
+            type: z.enum(['retailer', 'review', 'forum', 'official', 'news', 'general']).optional(),
         })).optional(),
         specs: z.record(z.string(), z.any()).optional(),
         intelligence: z.object({
@@ -154,18 +168,55 @@ export const ProductSchema = z.object({
             cons: z.array(z.string()),
             buyerFit: z.string(),
             featureScore: z.number(),
+            pricePosition: z.enum(['budget', 'midrange', 'premium', 'unknown']).optional(),
+            marketVerdict: z.string().optional(),
+            sellingAngles: z.array(z.string()).optional(),
+        }).optional(),
+        metrics: z.object({
+            sentiment: z.object({
+                score: z.number(), // 0-100
+                label: z.string(),
+                highlights: z.array(z.string()),
+            }).optional(),
+            reviews: z.object({
+                rating: z.number(),
+                count: z.number(),
+                distribution: z.record(z.string(), z.number()).optional(), // e.g. {"5": 100, "4": 20}
+            }).optional(),
+            market: z.object({
+                meanPrice: z.number().optional(),
+                priceVolatility: z.number().optional(),
+                demandLevel: z.enum(['low', 'medium', 'high', 'viral']).optional(),
+            }).optional(),
         }).optional(),
         /** EAN / barcode / UPC / GTIN extracted from CSV */
         barcode: z.string().optional(),
         /** Manufacturer Part Number extracted from CSV */
         mpn: z.string().optional(),
     }).optional(),
-    observations: z.record(z.string(), z.array(z.any())).optional(),
+    observations: z.record(z.string(), z.array(z.object({
+        v: z.any(),
+        c: z.number(),
+        s: z.string(),
+        t: z.string(),
+        m: z.string().optional(), // Method: direct, inference, lookup
+    }))).optional(),
     consensus: z.record(z.string(), z.object({ v: z.any(), c: z.number(), flag: z.string().nullable() })).optional(),
     sources: z.record(z.string(), z.object({ lbl: z.string(), type: z.string(), trust: z.number() })).optional(),
-    knowledge: z.object({ insights: z.object({ pros: z.array(z.string()), cons: z.array(z.string()), fit: z.string() }) }).optional(),
+    knowledge: z.object({ 
+        insights: z.object({ 
+            pros: z.array(z.string()), 
+            cons: z.array(z.string()), 
+            fit: z.string(),
+            hooks: z.array(z.string()).optional(),
+        }) 
+    }).optional(),
     _searchIndex: z.string().optional(),
-    _analytics: z.any().optional(),
+    _analytics: z.object({
+        viewCount: z.number().default(0),
+        lastViewed: z.string().optional(),
+        relevanceScore: z.number().optional(),
+    }).optional(),
 });
 
 export interface CategorySpec {

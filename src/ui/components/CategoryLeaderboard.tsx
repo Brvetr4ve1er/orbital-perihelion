@@ -36,19 +36,19 @@ export const CategoryLeaderboard = ({ products }: Props) => {
         <section className="reorder-radar cat-leaderboard">
             <div className="reorder-radar-header">
                 <div className="reorder-radar-title">
-                    🏆 Category Performance
+                    Performance par catégorie
                     <span className="badge" style={{ background: 'rgba(99,102,241,0.18)', color: '#a5b4fc' }}>
-                        30d
+                        30j
                     </span>
                 </div>
                 <div style={{ fontSize: 11, color: '#94a3b8' }}>
-                    {rows.length} active · {priceFmt.format(total)}
+                    {rows.length} active{rows.length !== 1 ? 's' : ''} · {priceFmt.format(total)}
                 </div>
             </div>
 
             {rows.length === 0 ? (
                 <div className="reorder-radar-empty">
-                    No category-level sales in the last 30 days.
+                    <p>Aucune vente par catégorie sur les 30 derniers jours.</p>
                 </div>
             ) : (
                 <div className="cat-list">
@@ -60,7 +60,7 @@ export const CategoryLeaderboard = ({ products }: Props) => {
                                 <div className="cat-row-name">
                                     <span className="cat-row-label">{r.label}</span>
                                     <span className="cat-row-sub">
-                                        {r.units30d} units · {r.productCount} SKUs
+                                        {r.units30d} unité{r.units30d !== 1 ? 's' : ''} · {r.productCount} réf.
                                     </span>
                                 </div>
                                 <div className="cat-row-bar">

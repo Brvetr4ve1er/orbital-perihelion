@@ -36,10 +36,16 @@ export interface Insight {
     metric?: string;
 }
 
-function purchasePriceOf(p: Product): number {
+/** Returns purchase price and whether it is real (from schema) or estimated. */
+function purchasePriceOf(p: Product): { price: number; isEstimated: boolean } {
+    // CPO v4.2: priceRange.min = purchase/cost price, .typical = retail price
+    const min = p.commercial?.priceRange?.min;
+    if (typeof min === 'number' && min > 0) {
+        return { price: min, isEstimated: false };
+    }
+    // No purchase price in schema — use 60% of retail as rough estimate
     const retail = p.commercial?.priceRange?.typical || 0;
-    const purchase = (p.commercial as any)?.purchasePrice;
-    return typeof purchase === 'number' && purchase > 0 ? purchase : retail * 0.6;
+    return { price: retail * 0.6, isEstimated: true };
 }
 
 function priceOf(p: Product): number {
@@ -158,24 +164,28 @@ export function computeInsights(products: Product[], limit = 8): Insight[] {
     // ── 3. Dead capital ────────────────────────────────────────────────────
     let deadCapital = 0;
     let deadCount = 0;
+    let hasEstimatedPrices = false;
     let worstDead: { p: Product; tied: number } | null = null;
     for (const p of products) {
         const v = velMap.get(p.identity.id);
         if (v?.reorderSignal === 'dead') {
-            const tied = purchasePriceOf(p) * v.onHand;
+            const { price, isEstimated } = purchasePriceOf(p);
+            if (isEstimated) hasEstimatedPrices = true;
+            const tied = price * v.onHand;
             deadCapital += tied;
             deadCount++;
             if (!worstDead || tied > worstDead.tied) worstDead = { p, tied };
         }
     }
     if (deadCount >= 3 && deadCapital > 0) {
+        const estSuffix = hasEstimatedPrices ? " (estimé — importez les prix d'achat pour précision)" : '';
         insights.push({
             id: 'dead-capital',
-            severity: 'warning',
+            severity: hasEstimatedPrices ? 'info' : 'warning',
             icon: '💀',
-            headline: `${fmtCurrency(deadCapital)} tied in dead stock`,
-            body: `${deadCount} SKUs have had no sales in 90 days. ${worstDead ? `Largest position: ${worstDead.p.identity.name} (${fmtCurrency(worstDead.tied)}).` : ''} Consider discounting or clearing.`,
-            weight: 65,
+            headline: `${fmtCurrency(deadCapital)} immobilisé en stock mort${hasEstimatedPrices ? ' ≈' : ''}`,
+            body: `${deadCount} SKUs sans ventes depuis 90 jours. ${worstDead ? `Pire position: ${worstDead.p.identity.name} (${fmtCurrency(worstDead.tied)}).` : ''} ${estSuffix} Envisager des déstockages.`,
+            weight: hasEstimatedPrices ? 40 : 65,
             metric: fmtShort(deadCapital),
         });
     }

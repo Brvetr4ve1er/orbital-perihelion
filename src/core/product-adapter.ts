@@ -175,8 +175,8 @@ export const ProductAdapter = {
         const stockQty = typeof stockObs?.v === 'number' ? stockObs.v : 0;
 
         // [P1-1] Margin: compute directly from prices, no consensus obs needed
-        const retailPrice   = p.commercial.priceRange.typical || p.commercial.priceRange.max || 0;
-        const purchasePrice = p.commercial.priceRange.min || 0;
+        const retailPrice   = p.commercial?.priceRange?.typical || p.commercial?.priceRange?.max || 0;
+        const purchasePrice = p.commercial?.priceRange?.min || 0;
         const margin = retailPrice > 0 && purchasePrice > 0
             ? Math.round(((retailPrice - purchasePrice) / retailPrice) * 100)
             : 0;

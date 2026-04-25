@@ -1,6 +1,6 @@
 /**
- * SalesKPIStrip — sales-derived KPIs (revenue 30d, AOV, top seller, trend).
- * Renders nothing when there is no sales data yet.
+ * SalesKPIStrip — KPIs dérivés des ventes (CA 30j, panier moyen, top vendeur, tendance).
+ * Ne s'affiche pas tant qu'il n'y a pas de données de vente.
  */
 import React, { useEffect, useState } from 'react';
 import { Product } from '../../core/schema';
@@ -28,36 +28,36 @@ export const SalesKPIStrip = ({ products }: Props) => {
     return (
         <section className="kpi-strip kpi-strip-sales">
             <div className="kpi-card kpi-revenue">
-                <div className="kpi-label">Revenue (30d)</div>
+                <div className="kpi-label">Chiffre d'affaires (30j)</div>
                 <div className="kpi-value">{priceFmt.format(kpis.revenue30d)}</div>
                 <div className="kpi-sub" style={{ color: trendColor }}>
-                    {trendIcon} {Math.abs(trendPct)}% vs prior 23d
+                    {trendIcon} {Math.abs(trendPct)}% vs 23j précédents
                 </div>
             </div>
 
             <div className="kpi-card kpi-cost">
-                <div className="kpi-label">Units sold (30d)</div>
+                <div className="kpi-label">Unités vendues (30j)</div>
                 <div className="kpi-value">{kpis.units30d.toLocaleString()}</div>
-                <div className="kpi-sub">{kpis.orders30d} order-days</div>
+                <div className="kpi-sub">{kpis.orders30d} jour{kpis.orders30d !== 1 ? 's' : ''} de commande</div>
             </div>
 
             <div className="kpi-card kpi-ai">
-                <div className="kpi-label">AOV</div>
+                <div className="kpi-label">Panier moyen</div>
                 <div className="kpi-value">{priceFmt.format(kpis.aov)}</div>
-                <div className="kpi-sub">Avg basket</div>
+                <div className="kpi-sub">Valeur moyenne par commande</div>
             </div>
 
             <div className="kpi-card kpi-health" style={{ gridColumn: 'span 2' }}>
-                <div className="kpi-label">Top Seller (30d)</div>
+                <div className="kpi-label">Meilleure vente (30j)</div>
                 {kpis.topSeller ? (
                     <>
                         <div className="kpi-value" style={{ fontSize: '1.1em', fontWeight: 600, lineHeight: 1.2 }}>
                             {kpis.topSeller.name}
                         </div>
-                        <div className="kpi-sub">{kpis.topSeller.units} units moved</div>
+                        <div className="kpi-sub">{kpis.topSeller.units} unité{kpis.topSeller.units !== 1 ? 's' : ''} écoulée{kpis.topSeller.units !== 1 ? 's' : ''}</div>
                     </>
                 ) : (
-                    <div className="kpi-sub">No data</div>
+                    <div className="kpi-sub">Aucune donnée</div>
                 )}
             </div>
         </section>

@@ -4,6 +4,7 @@ import { ProductAdapter } from '../../../core/product-adapter';
 import { LLMService } from '../../../services/llm';
 import { inventoryStore } from '../../../state/store';
 import { useSettings } from '../settings/useSettings';
+import { ProductEditor } from './ProductEditor';
 
 /**
  * Adaptive UI Component for PKOS - Powered by Tambo AI.
@@ -79,6 +80,11 @@ export const ProductIntelligenceUI = ({ product }: { product: Product }) => {
 
     const [isEnriching, setIsEnriching] = useState(false);
     const [enrichError, setEnrichError] = useState<string | null>(null);
+    const [isEditing, setIsEditing] = useState(false);
+
+    if (isEditing) {
+        return <ProductEditor product={product} onClose={() => setIsEditing(false)} />;
+    }
 
     const lp = ProductAdapter.toLegacy(product);
     const enrichment = product.knowledge?.insights || product.enrichment?.intelligence;
@@ -142,12 +148,19 @@ export const ProductIntelligenceUI = ({ product }: { product: Product }) => {
             {/* Header / Actions */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
                 <h2 style={{ fontSize: '1.2rem', margin: 0 }}>{lp.name}</h2>
-                <button 
-                    onClick={handleEnrich} 
-                    disabled={isEnriching}
-                    style={{ background: '#7c4dff', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '8px', cursor: isEnriching ? 'not-allowed' : 'pointer', fontWeight: 600, opacity: isEnriching ? 0.7 : 1 }}>
-                    {isEnriching ? '⏳ Analyse en cours...' : '🔍 Enrichir avec l\'IA'}
-                </button>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                    <button 
+                        onClick={() => setIsEditing(true)}
+                        style={{ background: 'transparent', color: '#fff', border: '1px solid rgba(255,255,255,0.2)', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', fontWeight: 600 }}>
+                        ✏️ Éditer (CRUD)
+                    </button>
+                    <button 
+                        onClick={handleEnrich} 
+                        disabled={isEnriching}
+                        style={{ background: '#7c4dff', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '8px', cursor: isEnriching ? 'not-allowed' : 'pointer', fontWeight: 600, opacity: isEnriching ? 0.7 : 1 }}>
+                        {isEnriching ? '⏳ Analyse en cours...' : '🔍 Enrichir avec l\'IA'}
+                    </button>
+                </div>
             </div>
             
             {enrichError && (

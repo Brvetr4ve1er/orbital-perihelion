@@ -89,20 +89,21 @@ export function computeVelocity(products: Product[], sales: SalesRecord[]): Map<
     return out;
 }
 
-// ── Memoized API keyed on collection sizes + cached object identity ──────────
+// ── Memoized API keyed on collection sizes + explicit force invalidation ──────────────
 let _cacheKey = '';
+let _forceKey = 0;
 let _cache: Map<string, ProductVelocity> = new Map();
 
 export function getVelocityMap(products: Product[]): Map<string, ProductVelocity> {
     const sales = SalesService.getCached();
-    const key = `${products.length}:${sales.length}`;
+    const key = `${products.length}:${sales.length}:${_forceKey}`;
     if (key === _cacheKey) return _cache;
     _cache = computeVelocity(products, sales);
     _cacheKey = key;
     return _cache;
 }
 
-export function invalidateVelocityCache() { _cacheKey = ''; }
+export function invalidateVelocityCache() { _cacheKey = ''; _forceKey++; }
 
 // Invalidate whenever sales change
 SalesService.subscribe(() => invalidateVelocityCache());

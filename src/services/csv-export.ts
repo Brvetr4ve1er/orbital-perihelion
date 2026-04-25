@@ -48,8 +48,13 @@ export function downloadCSV(products: Product[], filename = `pkos-export-${Date.
     downloadBlob(csv, filename);
 }
 
-function downloadBlob(csv: string, filename: string) {
-    const blob = new Blob(['\ufeff', csv], { type: 'text/csv;charset=utf-8;' });
+export function downloadJSON(products: Product[], filename = `pkos-cold-storage-${Date.now()}.json`) {
+    const json = JSON.stringify(products, null, 2);
+    downloadBlob(json, filename, 'application/json');
+}
+
+function downloadBlob(data: string, filename: string, type: string = 'text/csv;charset=utf-8;') {
+    const blob = new Blob(['\ufeff', data], { type });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;

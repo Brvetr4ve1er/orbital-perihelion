@@ -41,23 +41,23 @@ export const DeadStock = ({ products, onPickProduct, limit = 8 }: Props) => {
         <section className="reorder-radar">
             <div className="reorder-radar-header">
                 <div className="reorder-radar-title">
-                    💀 Dead Stock
+                    Stock dormant
                     {queue.length > 0 && (
                         <span className="badge" style={{ background: 'rgba(120,113,108,0.25)', color: '#d6d3d1' }}>
-                            {queue.length} items
+                            {queue.length} article{queue.length !== 1 ? 's' : ''}
                         </span>
                     )}
                 </div>
                 {tiedCapital > 0 && (
                     <div style={{ fontSize: 11, color: '#94a3b8' }}>
-                        ~{Math.round(tiedCapital).toLocaleString()} DZD tied up
+                        ~{Math.round(tiedCapital).toLocaleString()} DZD immobilisé{tiedCapital > 1 ? 's' : ''}
                     </div>
                 )}
             </div>
 
             {queue.length === 0 ? (
                 <div className="reorder-radar-empty">
-                    ✅ No dead stock detected. Every product is moving.
+                    <p>Aucun stock dormant détecté. Tous les produits ont des ventes.</p>
                 </div>
             ) : (
                 <div className="reorder-list">
@@ -72,13 +72,13 @@ export const DeadStock = ({ products, onPickProduct, limit = 8 }: Props) => {
                                 <div className="brand">{product.identity.brand}</div>
                             </div>
                             <div className="reorder-row-stock">
-                                {velocity.onHand} units
+                                {velocity.onHand} unité{velocity.onHand !== 1 ? 's' : ''}
                             </div>
                             <div className="reorder-row-velocity" style={{ color: '#94a3b8' }}>
-                                0 sales 90d
+                                0 vente 90j
                             </div>
                             <div className="reorder-row-doc" style={{ color: '#d6d3d1' }}>
-                                💀 discount
+                                À déstocker
                             </div>
                         </div>
                     ))}

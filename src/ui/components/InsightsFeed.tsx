@@ -48,13 +48,13 @@ export const InsightsFeed = ({ products, onPickProduct }: Props) => {
         <section className="insights-feed">
             <div className="insights-feed-header">
                 <div className="insights-feed-title">
-                    🧠 Insights
+                    Insights
                     <span className="badge" style={{ background: 'rgba(165,180,252,0.18)', color: '#a5b4fc' }}>
                         auto
                     </span>
                 </div>
                 <div className="insights-feed-sub">
-                    {insights.length} observation{insights.length === 1 ? '' : 's'}
+                    {insights.length} observation{insights.length !== 1 ? 's' : ''}
                 </div>
             </div>
 

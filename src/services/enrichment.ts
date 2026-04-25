@@ -277,7 +277,9 @@ export const EnrichmentService = {
     },
 
     computeConsensus(p: any) {
-        p.consensus = {};
+        // Merge into existing consensus — do NOT wipe p.consensus = {}
+        // This preserves any manually-set values from ProductEditor.
+        if (!p.consensus) p.consensus = {};
         if (!p.observations) return;
 
         Object.entries(p.observations).forEach(([key, obsList]: [string, any]) => {
@@ -295,6 +297,7 @@ export const EnrichmentService = {
             const winner = Object.values(clusters).sort((a: any, b: any) => b.maxConf - a.maxConf)[0];
             p.consensus[key] = { v: winner.v, c: winner.maxConf, flag: null };
         });
+        if (!p._meta) p._meta = {};
         p._meta.lastAggregated = new Date().toISOString();
     },
 

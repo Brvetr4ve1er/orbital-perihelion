@@ -84,8 +84,8 @@ export const RevenueChart = ({ products }: Props) => {
         <section className="revenue-chart">
             <div className="revenue-chart-header">
                 <div className="revenue-chart-title">
-                    💹 Revenue Trend
-                    <span className="revenue-chart-total">{priceFmt.format(total)} <span>· {range}d total</span></span>
+                    Tendance du chiffre d'affaires
+                    <span className="revenue-chart-total">{priceFmt.format(total)} <span>· {range}j total</span></span>
                 </div>
                 <div className="revenue-chart-ranges">
                     {RANGES.map(r => (

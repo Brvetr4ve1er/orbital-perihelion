@@ -23,8 +23,21 @@ export const Engine = {
             if (brand    && brand    !== 'all' && p.identity.brand    !== brand)    return false;
 
             if (stock && stock !== 'all') {
-                const lp = ProductAdapter.toLegacy(p);
-                if (lp.commercial.stockStatus !== stock) return false;
+                const stockObs = p.observations?.stock?.[0];
+                const stockQty = typeof stockObs?.v === 'number' ? stockObs.v : 0;
+                let status = 'Rupture';
+                if (stockQty > 5) status = 'Normal';
+                else if (stockQty > 0) status = 'Faible';
+                
+                const csvStatus = p.observations?.stock_status?.[0]?.v;
+                if (typeof csvStatus === 'string') {
+                    const l = csvStatus.toLowerCase();
+                    if (l.includes('stock')) status = 'Normal';
+                    if (l.includes('faible')) status = 'Faible';
+                    if (l.includes('rupture')) status = 'Rupture';
+                }
+                
+                if (status !== stock) return false;
             }
 
             // Quick-view presets — composable with the above.
@@ -42,12 +55,14 @@ export const Engine = {
                 const typ = p.commercial?.priceRange?.typical || 0;
                 if (!typ || !min) return false;
                 const margin = (typ - min) / typ;
-                if (margin > 0.15) return false;
+                if (Number.isNaN(margin) || margin > 0.15) return false;
             }
 
             if (q) {
-                const idx = p._searchIndex || buildSearchIndex(p);
-                return idx.includes(q);
+                if (!p._searchIndex) {
+                    p._searchIndex = buildSearchIndex(p);
+                }
+                return p._searchIndex.includes(q);
             }
             return true;
         });
@@ -67,8 +82,8 @@ export const Engine = {
             const bConf = b.identity.confidenceScore || 0;
             if (bConf !== aConf) return bConf - aConf;
             
-            const aMargin = (a.commercial.priceRange?.typical || 0) - (a.commercial.priceRange?.min || 0);
-            const bMargin = (b.commercial.priceRange?.typical || 0) - (b.commercial.priceRange?.min || 0);
+            const aMargin = (a.commercial?.priceRange?.typical || 0) - (a.commercial?.priceRange?.min || 0);
+            const bMargin = (b.commercial?.priceRange?.typical || 0) - (b.commercial?.priceRange?.min || 0);
             return bMargin - aMargin;
         });
     },
@@ -96,28 +111,41 @@ export const Engine = {
         const stockHealth = { normal: 0, faible: 0, rupture: 0 };
 
         products.forEach(p => {
-            const lp = ProductAdapter.toLegacy(p);
-            const comm = lp.commercial;
+            const retailPrice = p.commercial?.priceRange?.typical || p.commercial?.priceRange?.max || 0;
+            const purchasePrice = p.commercial?.priceRange?.min || 0;
+            const stockObs = p.observations?.stock?.[0];
+            const stockQty = typeof stockObs?.v === 'number' ? stockObs.v : 0;
+            
+            let stockStatus = 'Rupture';
+            if (stockQty > 5) stockStatus = 'Normal';
+            else if (stockQty > 0) stockStatus = 'Faible';
+            const csvStatus = p.observations?.stock_status?.[0]?.v;
+            if (typeof csvStatus === 'string') {
+                const l = csvStatus.toLowerCase();
+                if (l.includes('stock')) stockStatus = 'Normal';
+                if (l.includes('faible')) stockStatus = 'Faible';
+                if (l.includes('rupture')) stockStatus = 'Rupture';
+            }
 
-            totalRetail += (comm.retailPrice || 0) * (comm.stockQty || 0);
-            totalCost += (comm.purchasePrice || 0) * (comm.stockQty || 0);
-            totalQty += (comm.stockQty || 0);
+            totalRetail += retailPrice * stockQty;
+            totalCost += purchasePrice * stockQty;
+            totalQty += stockQty;
 
             // Brand counts
-            brands[lp.marque] = (brands[lp.marque] || 0) + 1;
+            const brand = p.identity.brand || 'Inconnu';
+            brands[brand] = (brands[brand] || 0) + 1;
 
             // Category counts
-            const catId = lp.category.id;
+            const catId = p.identity.category || 'other';
             if (!categories[catId]) {
-                categories[catId] = { label: lp.category.label, icon: lp.category.icon, count: 0 };
+                categories[catId] = { label: ProductAdapter._categoryLabel(catId), icon: ProductAdapter._categoryIcon(catId), count: 0 };
             }
             categories[catId].count++;
 
             // Health
-            const status = comm.stockStatus;
-            if (status === 'Normal') stockHealth.normal++;
-            else if (status === 'Faible') stockHealth.faible++;
-            else if (status === 'Rupture') stockHealth.rupture++;
+            if (stockStatus === 'Normal') stockHealth.normal++;
+            else if (stockStatus === 'Faible') stockHealth.faible++;
+            else if (stockStatus === 'Rupture') stockHealth.rupture++;
         });
 
         const brandList = Object.entries(brands)
@@ -133,7 +161,7 @@ export const Engine = {
             totalSKUs: totalQty,
             totalRetailValue: totalRetail,
             totalCost: totalCost,
-            avgMargin: products.length ? Math.round((totalRetail - totalCost) / totalRetail * 100) : 0,
+            avgMargin: totalRetail > 0 ? Math.round((totalRetail - totalCost) / totalRetail * 100) : 0,
             brands: brandList,
             categories: categoryList,
             stockHealth

@@ -3,7 +3,7 @@
 // Generates realistic multi-category graph data for testing
 // ─────────────────────────────────────────────────────────────────────────────
 
-import type { GraphData, GraphNode, GraphLink, NodeGroup } from './types';
+import type { GraphData, GraphNode, GraphLink, NodeGroup } from '../types';
 
 // ─── Configuration ────────────────────────────────────────────────────────────
 

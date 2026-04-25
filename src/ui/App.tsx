@@ -4,17 +4,18 @@ import { Persistence } from '../services/persistence';
 import { Dashboard } from './features/dashboard/Dashboard';
 import { LLMConnector } from './components/LLMConnector';
 import { EnrichmentQueuePanel } from './features/dashboard/EnrichmentQueuePanel';
-import { TamboProvider } from '@tambo-ai/react';
+// TamboProvider removed — was wrapping the entire tree but never consumed
 import { LLMService } from '../services/llm';
 import { SettingsPanel } from './features/settings/SettingsPanel';
 import { Toaster } from './components/Toaster';
 import { ConfirmHost, confirm } from './components/ConfirmDialog';
 import { CommandPalette, Command } from './components/CommandPalette';
 import { ShortcutsHelp } from './components/ShortcutsHelp';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { toasts } from '../services/toast';
-import { generateSampleProducts } from '../services/sample-data';
-import { downloadCSV, downloadShopifyCSV } from '../services/csv-export';
+import { generateSampleProducts, generateStressTestProducts } from '../services/sample-data';
+import { downloadCSV, downloadShopifyCSV, downloadJSON } from '../services/csv-export';
 import { EnrichmentQueue } from '../services/enrichment-queue';
 import { Product } from '../core/schema';
 import { SalesService, parseSalesCSV } from '../services/sales';
@@ -32,7 +33,7 @@ export const App = () => {
     const searchInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
-        LLMService.ping();
+        LLMService.ping().catch(e => console.warn('[App] LLM ping failed:', e));
         SalesService.loadAll().catch(e => console.warn('[App] Sales load failed:', e));
         const unsubscribe = inventoryStore.subscribe(setState);
         Persistence.loadAll().then(products => {
@@ -66,6 +67,7 @@ export const App = () => {
             if (msg.type === 'progress') {
                 toasts.update(progressId, { message: `Processing ${msg.current}/${msg.total}…` });
             } else if (msg.type === 'success') {
+                console.log('[App] Import success:', msg.products?.length, 'products');
                 inventoryStore.importSucceeded(msg.products, msg.report);
                 Persistence.saveAll(msg.products).catch(err =>
                     console.error('[App] Failed to persist import:', err)
@@ -74,6 +76,7 @@ export const App = () => {
                 toasts.success(`Imported ${msg.products.length} products`, 'Ready to explore');
                 worker.terminate();
             } else if (msg.type === 'error') {
+                console.error('[App] Import worker error:', msg.message);
                 inventoryStore.importFailed(msg.message);
                 toasts.dismiss(progressId);
                 toasts.error('Import failed', msg.message);
@@ -112,6 +115,18 @@ export const App = () => {
         toasts.success(`Loaded ${products.length} sample products`, 'Explore every view');
     }, []);
 
+    const loadStressData = useCallback(() => {
+        const progressId = toasts.progress('Generating stress test data', '5,000 products');
+        setTimeout(() => {
+            const products = generateStressTestProducts(5000);
+            inventoryStore.importSucceeded(products);
+            // Too large to persist synchronously without lag, so we'll save it asynchronously or skip
+            Persistence.saveAll(products).catch(err => console.error(err));
+            toasts.dismiss(progressId);
+            toasts.success(`Loaded ${products.length} stress products`, 'Ready to test limits');
+        }, 100);
+    }, []);
+
     const exportAll = useCallback(() => {
         if (!state.products.length) {
             toasts.warning('Nothing to export');
@@ -128,6 +143,15 @@ export const App = () => {
         }
         downloadShopifyCSV(state.products);
         toasts.success(`Exported ${state.products.length} products`, 'Ready to import into Shopify');
+    }, [state.products]);
+
+    const exportJSON = useCallback(() => {
+        if (!state.products.length) {
+            toasts.warning('Nothing to export');
+            return;
+        }
+        downloadJSON(state.products);
+        toasts.success(`Cold storage export complete`, `${state.products.length} products saved`);
     }, [state.products]);
 
     const enrichAll = useCallback(() => {
@@ -198,14 +222,16 @@ export const App = () => {
         { id: 'import-csv', label: 'Import CSV', icon: '📥', section: 'actions', shortcut: '⌘I', run: triggerImport },
         { id: 'import-sales', label: 'Import sales CSV', icon: '📊', section: 'actions', hint: 'Shopify / Woo / Square', run: triggerSalesImport },
         { id: 'load-sample', label: 'Load sample data', icon: '✨', section: 'actions', hint: '24 products', run: loadSampleData },
+        { id: 'load-stress', label: 'Load stress test data', icon: '🔥', section: 'data', hint: '5,000 products', run: loadStressData },
         { id: 'export-csv', label: 'Export all to CSV', icon: '⬇', section: 'actions', shortcut: '⌘E', run: exportAll },
         { id: 'export-shopify', label: 'Export to Shopify CSV', icon: '🛍', section: 'actions', hint: 'Matches Shopify Products import spec', run: exportShopify },
+        { id: 'export-json', label: 'Export Cold Storage Backup (JSON)', icon: '💾', section: 'actions', hint: 'Full state export', run: exportJSON },
         { id: 'enrich-all', label: 'Enrich all products with AI', icon: '✨', section: 'actions', run: enrichAll },
         { id: 'clear-all', label: 'Clear entire catalog', icon: '🗑', section: 'actions', run: clearAll },
         { id: 'clear-sales', label: 'Clear sales history', icon: '🗑', section: 'actions', run: clearSales },
         { id: 'settings', label: 'Open settings', icon: '⚙️', section: 'navigation', shortcut: '⌘,', run: () => setSettingsOpen(true) },
         { id: 'shortcuts', label: 'Show keyboard shortcuts', icon: '⌨', section: 'navigation', shortcut: '?', run: () => setShortcutsOpen(true) },
-    ], [triggerImport, triggerSalesImport, loadSampleData, exportAll, exportShopify, enrichAll, clearAll, clearSales]);
+    ], [triggerImport, triggerSalesImport, loadSampleData, loadStressData, exportAll, exportShopify, exportJSON, enrichAll, clearAll, clearSales]);
 
     const onPickProduct = useCallback((p: Product) => {
         setFocusedProduct(p);
@@ -233,10 +259,6 @@ export const App = () => {
     ], [paletteOpen, shortcutsOpen, settingsOpen, exportAll]));
 
     return (
-        <TamboProvider
-            apiKey={import.meta.env.VITE_TAMBO_API_KEY || 'pkos-local-dev-key'}
-            userKey={import.meta.env.VITE_TAMBO_USER_KEY || 'admin'}
-        >
             <div className="app-container">
                 {/* Shopify-style 3-zone header */}
                 <header className="header header-shopify">
@@ -244,7 +266,7 @@ export const App = () => {
                         <div className="header-zone header-left">
                             <div className="logo">
                                 <div className="logo-icon">⚡</div>
-                                <span className="logo-text">PKOS</span>
+                                <span className="logo-text">Shopifoo</span>
                             </div>
                         </div>
 
@@ -254,8 +276,10 @@ export const App = () => {
                                 onClick={() => setPaletteOpen(true)}
                                 aria-label="Search or run command"
                             >
-                                <span className="gs-icon">🔎</span>
-                                <span className="gs-placeholder">Search products or run command</span>
+                                <span className="gs-icon">
+                                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                                </span>
+                                <span className="gs-placeholder">Rechercher ou appuyer sur ⌘K</span>
                                 <kbd className="gs-kbd">⌘K</kbd>
                             </button>
                         </div>
@@ -266,15 +290,15 @@ export const App = () => {
                             <button
                                 className="header-icon-btn"
                                 onClick={() => setShortcutsOpen(true)}
-                                title="Keyboard shortcuts (?)"
+                                title="Raccourcis clavier (?)"
                             >⌨</button>
                             <button
                                 className="header-icon-btn"
                                 onClick={() => setSettingsOpen(true)}
-                                title="Settings (⌘,)"
+                                title="Paramètres (⌘,)"
                             >⚙️</button>
-                            <label className="btn btn-ghost" title="Import sales CSV (Shopify / Woo / Square)">
-                                📊 Sales
+                            <label className="btn btn-ghost" title="Importer les ventes (CSV)">
+                                Ventes
                                 <input
                                     id="sales-file-input"
                                     type="file"
@@ -284,7 +308,7 @@ export const App = () => {
                                 />
                             </label>
                             <label className={`btn btn-primary ${isLoading ? 'is-disabled' : ''}`}>
-                                {isLoading ? '⏳ Importing…' : '📥 Import CSV'}
+                                {isLoading ? 'Importation…' : 'Importer CSV'}
                                 <input
                                     id="csv-file-input"
                                     type="file"
@@ -302,42 +326,40 @@ export const App = () => {
                     {isLoading && (
                         <div className="loading-state">
                             <div className="loading-spinner" />
-                            <p>Parsing your CSV…</p>
+                            <p>Analyse du fichier en cours…</p>
                         </div>
                     )}
 
                     {!isLoading && hasError && (
                         <div className="empty-state">
-                            <div className="empty-icon">⚠️</div>
-                            <h2>Import failed</h2>
+                            <h2>Erreur d'importation</h2>
                             <p className="error-message">{state.importError}</p>
-                            <p className="error-hint">
-                                The universal parser accepts any CSV format. Make sure your file has a product-name column (Nom, Name, Designation, Libellé…).
-                            </p>
                             <div className="empty-actions">
-                                <button className="btn btn-primary" onClick={triggerImport}>📥 Try another file</button>
-                                <button className="btn btn-ghost" onClick={loadSampleData}>✨ Load sample data</button>
+                                <button className="btn btn-primary" onClick={triggerImport}>Réessayer</button>
+                                <button className="btn btn-ghost" onClick={loadSampleData}>Données de démonstration</button>
                             </div>
                         </div>
                     )}
 
                     {!isLoading && !hasError && !hasProducts && (
                         <div className="empty-state">
-                            <div className="empty-icon">📊</div>
-                            <h2>Welcome to PKOS</h2>
-                            <p>Product Knowledge Operating System — import your catalog to begin.</p>
+                            <h2>Bienvenue sur Shopifoo</h2>
+                            <p>Importez votre catalogue pour commencer.</p>
                             <div className="empty-actions">
-                                <button className="btn btn-primary btn-lg" onClick={triggerImport}>📥 Import CSV</button>
-                                <button className="btn btn-ghost btn-lg" onClick={loadSampleData}>✨ Try with sample data</button>
+                                <button className="btn btn-primary btn-lg" onClick={triggerImport}>Importer un fichier CSV</button>
+                                <button className="btn btn-ghost btn-lg" onClick={loadSampleData}>Données de démonstration</button>
                             </div>
                             <p className="empty-hint">
-                                Any CSV format works — comma, semicolon, tab. Columns auto-detected (name, price, stock, brand…).
-                                <br/>Press <kbd>⌘K</kbd> anywhere to search or run commands.
+                                Tous les formats CSV sont supportés. Appuyez sur <kbd>⌘K</kbd> pour accéder aux commandes.
                             </p>
                         </div>
                     )}
 
-                    {!isLoading && hasProducts && <Dashboard />}
+                    {!isLoading && hasProducts && (
+                        <ErrorBoundary>
+                            <Dashboard />
+                        </ErrorBoundary>
+                    )}
                 </main>
 
                 {/* Floating overlays */}
@@ -353,6 +375,5 @@ export const App = () => {
                 <Toaster />
                 <ConfirmHost />
             </div>
-        </TamboProvider>
     );
 };

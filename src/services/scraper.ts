@@ -1,5 +1,5 @@
 /**
- * Scraper Client — talks to the local Python sidecar.
+ * Scraper Client v2 — talks to the local Python sidecar.
  * Zero paid APIs. SearXNG + Crawl4AI + Playwright fallback.
  *
  * If the sidecar isn't running, every method resolves with an empty/null
@@ -10,6 +10,9 @@ export interface ScraperSource {
     title: string;
     url: string;
     snippet: string;
+    domain?: string;
+    type?: 'official' | 'retailer' | 'review' | 'general';
+    intent?: 'commercial' | 'technical' | 'sentiment';
     engine?: string;
 }
 
@@ -38,6 +41,17 @@ export interface EnrichBundle {
     cached?: boolean;
 }
 
+export interface ProductEnrichBundle {
+    product: { name: string; brand: string; sku: string; category: string; price: number };
+    search_meta: Record<string, { source: string; count: number }>;
+    sources: ScraperSource[];
+    markdown_bundle: string;
+    images: string[];
+    source_count: number;
+    total_search_results: number;
+    cached?: boolean;
+}
+
 let _available: boolean | null = null;
 
 async function _post<T>(path: string, body: any, timeoutMs = 30000): Promise<T | null> {
@@ -59,17 +73,18 @@ async function _post<T>(path: string, body: any, timeoutMs = 30000): Promise<T |
 }
 
 export const Scraper = {
-    /** One-shot probe — does the sidecar respond? Cached per-session. */
+    /** Probe the sidecar. Caches positive results; retries on failure. */
     async isAvailable(): Promise<boolean> {
-        if (_available !== null) return _available;
+        // If we know it's online, return true. 
+        // If we haven't checked or it was offline, re-check.
+        if (_available === true) return true;
+        
         try {
-            const r = await fetch('/api/search', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ query: '__ping__', max: 1 }),
-                signal: AbortSignal.timeout(2500),
+            const r = await fetch('/api/health', {
+                signal: AbortSignal.timeout(3000),
             });
             _available = r.ok;
+            if (_available) console.log('[Scraper] Sidecar is online');
         } catch {
             _available = false;
         }
@@ -90,7 +105,29 @@ export const Scraper = {
         return await _post<ScrapeResponse>('/api/scrape', { url, mode }, 30000);
     },
 
+    /** Legacy: generic enrichment bundle. */
     async enrichWeb(query: string, max_sources = 5, urls?: string[]): Promise<EnrichBundle | null> {
-        return await _post<EnrichBundle>('/api/enrich-web', { query, max_sources, urls }, 60000);
+        return await _post<EnrichBundle>('/api/enrich', { query, max_sources, urls }, 60000);
+    },
+
+    /**
+     * NEW: Full CPO v4.2 product enrichment pipeline.
+     * Executes multi-intent search (commercial, technical, sentiment),
+     * ranks & diversifies URLs by domain authority, scrapes top sources,
+     * and returns a structured markdown bundle ready for LLM extraction.
+     */
+    async enrichProduct(
+        name: string,
+        brand: string,
+        sku: string,
+        category: string,
+        price: number,
+        maxSources = 6
+    ): Promise<ProductEnrichBundle | null> {
+        return await _post<ProductEnrichBundle>(
+            '/api/enrich-product',
+            { name, brand, sku, category, price, max_sources: maxSources },
+            90000  // 90s timeout for full pipeline
+        );
     },
 };

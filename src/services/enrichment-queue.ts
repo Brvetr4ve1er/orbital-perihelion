@@ -8,10 +8,11 @@
  * - Emits progress events subscribable by any UI component
  * - Writes each result immediately to the store as it completes
  * - Supports pause, resume, and cancel
+ * - Circuit breaker: auto-pauses after consecutive failures
  */
 import { LLMService } from './llm';
+import { SchemaMapper } from './schema-mapper';
 import { inventoryStore } from '../state/store';
-import { buildSearchIndex } from '../core/search-index';
 
 export type JobStatus = 'pending' | 'running' | 'done' | 'failed' | 'skipped';
 
@@ -30,9 +31,14 @@ export interface QueueState {
     failedCount: number;
     startedAt: number | null;
     lastProcessedMs: number | null; // rolling avg for ETA
+    circuitBroken: boolean;         // true when auto-paused by circuit breaker
 }
 
 type QueueListener = (state: QueueState) => void;
+
+// ── Circuit Breaker Configuration ────────────────────────────────────────────
+const CIRCUIT_BREAKER_THRESHOLD = 3;     // consecutive failures to trigger
+const CIRCUIT_BREAKER_WINDOW_MS = 120000; // 2 minutes
 
 class EnrichmentQueueService {
     private state: QueueState = {
@@ -43,10 +49,15 @@ class EnrichmentQueueService {
         failedCount: 0,
         startedAt: null,
         lastProcessedMs: null,
+        circuitBroken: false,
     };
 
     private listeners: Set<QueueListener> = new Set();
     private abortController: AbortController | null = null;
+
+    // Circuit breaker state
+    private _consecutiveFailures = 0;
+    private _firstFailureAt: number | null = null;
 
     // ── Subscription ──────────────────────────────────────────
     subscribe(listener: QueueListener) {
@@ -67,6 +78,57 @@ class EnrichmentQueueService {
     private setState(patch: Partial<QueueState>) {
         this.state = { ...this.state, ...patch };
         this.notify();
+    }
+
+    // ── Circuit Breaker ───────────────────────────────────────
+    private _recordSuccess() {
+        this._consecutiveFailures = 0;
+        this._firstFailureAt = null;
+    }
+
+    /**
+     * Records a failure. Distinguishes between fatal errors (trip immediately)
+     * and transient errors (trip after threshold).
+     */
+    private _recordFailure(err?: any): boolean {
+        const now = Date.now();
+        const errMsg = err?.message?.toLowerCase() || '';
+
+        // Fatal errors: Model misconfigured, Auth failed, Invalid JSON (hallucination loop)
+        const isFatal = errMsg.includes('unauthorized') || 
+                        errMsg.includes('401') || 
+                        errMsg.includes('json') || 
+                        errMsg.includes('parse');
+
+        if (isFatal) {
+            console.error(`[EnrichmentQueue] Fatal error detected: "${err?.message}". Auto-pausing immediately.`);
+            this.setState({ isPaused: true, circuitBroken: true });
+            this._consecutiveFailures = 0;
+            this._firstFailureAt = null;
+            return true;
+        }
+
+        // Transient errors (network, timeouts) follow the rolling window threshold
+        if (this._firstFailureAt && (now - this._firstFailureAt) > CIRCUIT_BREAKER_WINDOW_MS) {
+            this._consecutiveFailures = 0;
+            this._firstFailureAt = null;
+        }
+
+        if (!this._firstFailureAt) this._firstFailureAt = now;
+        this._consecutiveFailures++;
+
+        if (this._consecutiveFailures >= CIRCUIT_BREAKER_THRESHOLD) {
+            console.error(
+                `[EnrichmentQueue] Circuit breaker tripped: ${CIRCUIT_BREAKER_THRESHOLD} consecutive transient failures ` +
+                `in ${Math.round((now - this._firstFailureAt) / 1000)}s. Auto-pausing queue.`
+            );
+            this.setState({ isPaused: true, circuitBroken: true });
+            this._consecutiveFailures = 0;
+            this._firstFailureAt = null;
+            return true;
+        }
+
+        return false;
     }
 
     // ── Queue Control ──────────────────────────────────────────
@@ -91,6 +153,7 @@ class EnrichmentQueueService {
             failedCount: 0,
             isRunning: false,
             isPaused: false,
+            circuitBroken: false,
         });
     }
 
@@ -98,7 +161,9 @@ class EnrichmentQueueService {
     async start() {
         if (this.state.isRunning) return;
         this.abortController = new AbortController();
-        this.setState({ isRunning: true, isPaused: false, startedAt: Date.now() });
+        this.setState({ isRunning: true, isPaused: false, startedAt: Date.now(), circuitBroken: false });
+        this._consecutiveFailures = 0;
+        this._firstFailureAt = null;
         await this._processNext(this.abortController.signal);
     }
 
@@ -110,7 +175,9 @@ class EnrichmentQueueService {
     /** Resume from where we left off. */
     async resume() {
         if (!this.state.isRunning || !this.state.isPaused) return;
-        this.setState({ isPaused: false });
+        this.setState({ isPaused: false, circuitBroken: false });
+        this._consecutiveFailures = 0;
+        this._firstFailureAt = null;
         await this._processNext(this.abortController!.signal);
     }
 
@@ -120,6 +187,7 @@ class EnrichmentQueueService {
         this.setState({
             isRunning: false,
             isPaused: false,
+            circuitBroken: false,
             jobs: this.state.jobs.map(j =>
                 j.status === 'running' ? { ...j, status: 'pending' } : j
             ),
@@ -137,88 +205,78 @@ class EnrichmentQueueService {
             failedCount: 0,
             startedAt: null,
             lastProcessedMs: null,
+            circuitBroken: false,
         });
     }
 
     // ── Internal Processing Loop ───────────────────────────────
 
     private async _processNext(signal: AbortSignal) {
-        if (signal.aborted || this.state.isPaused) {
-            this.setState({ isRunning: false });
-            return;
-        }
-
-        const nextIndex = this.state.jobs.findIndex(j => j.status === 'pending');
-        if (nextIndex === -1) {
-            // Queue exhausted
-            this.setState({ isRunning: false });
-            return;
-        }
-
-        // Mark job as running
-        const jobs = [...this.state.jobs];
-        jobs[nextIndex] = { ...jobs[nextIndex], status: 'running' };
-        this.setState({ jobs });
-
-        const job = jobs[nextIndex];
-        const product = inventoryStore.getState().products.find(
-            p => p.identity.id === job.productId
-        );
-
-        if (!product) {
-            jobs[nextIndex] = { ...jobs[nextIndex], status: 'failed', error: 'Product not found in store' };
-            this.setState({ jobs, failedCount: this.state.failedCount + 1 });
-            return this._processNext(signal);
-        }
-
-        const t0 = Date.now();
-        try {
-            const result = await LLMService.enrichProduct(product);
-
-            // Merge LLM result into the product object
-            const updated = { ...product };
-            updated.knowledge = updated.knowledge || {};
-            updated.knowledge.insights = result.ai_insights || {};
-            updated.enrichment = updated.enrichment || {};
-            if (result.competitorPrices) updated.enrichment.competitorPrices = result.competitorPrices;
-            if (result.description) updated.enrichment.seoDescription = result.description;
-            if (result.images && result.images.length) {
-                const existing = updated.enrichment.images || [];
-                updated.enrichment.images = [...new Set([...existing, ...result.images])].slice(0, 12);
+        while (true) {
+            if (signal.aborted || this.state.isPaused) {
+                this.setState({ isRunning: !this.state.isPaused ? false : this.state.isRunning });
+                return;
             }
-            if (result._sourceLinks && result._sourceLinks.length) {
-                updated.enrichment.sources = result._sourceLinks.slice(0, 10);
+
+            const nextIndex = this.state.jobs.findIndex(j => j.status === 'pending');
+            if (nextIndex === -1) {
+                // Queue exhausted
+                this.setState({ isRunning: false });
+                return;
             }
-            if (result.specs) {
-                updated.consensus = updated.consensus || {};
-                Object.entries(result.specs).forEach(([k, v]) => {
-                    updated.consensus![k] = { v, c: 0.9, flag: 'llm_verified' };
+
+            // Mark job as running
+            const jobs = [...this.state.jobs];
+            jobs[nextIndex] = { ...jobs[nextIndex], status: 'running' };
+            this.setState({ jobs });
+
+            const job = jobs[nextIndex];
+            const product = inventoryStore.getState().products.find(
+                p => p.identity.id === job.productId
+            );
+
+            if (!product) {
+                jobs[nextIndex] = { ...jobs[nextIndex], status: 'failed', error: 'Product not found in store' };
+                this.setState({ jobs, failedCount: this.state.failedCount + 1 });
+                continue;
+            }
+
+            const t0 = Date.now();
+            try {
+                const result = await LLMService.enrichProduct(product);
+
+                // Use SchemaMapper for deep CPO v4.2 merge with Observation/Consensus
+                const updated = SchemaMapper.mergeIntoProduct(product, result);
+
+                // Write back to store (which also persists to IDB via Persistence.updateOne)
+                inventoryStore.updateProduct(updated);
+
+                const elapsed = Date.now() - t0;
+                jobs[nextIndex] = { ...jobs[nextIndex], status: 'done' };
+                this.setState({
+                    jobs,
+                    completedCount: this.state.completedCount + 1,
+                    lastProcessedMs: elapsed,
                 });
+
+                // Circuit breaker: reset on success
+                this._recordSuccess();
+            } catch (err: any) {
+                if (signal.aborted) return;
+                jobs[nextIndex] = { ...jobs[nextIndex], status: 'failed', error: err.message };
+                this.setState({ jobs, failedCount: this.state.failedCount + 1 });
+
+                // Circuit breaker: record failure and potentially trip
+                if (this._recordFailure(err)) {
+                    // Circuit tripped — _recordFailure already set isPaused and circuitBroken.
+                    // The loop will halt on the next iteration.
+                    return;
+                }
             }
 
-            // Rebuild search index with enrichment data included
-            updated._searchIndex = buildSearchIndex(updated);
-
-            // Write back to store (which also persists to IDB via Persistence.updateOne)
-            inventoryStore.updateProduct(updated);
-
-            const elapsed = Date.now() - t0;
-            jobs[nextIndex] = { ...jobs[nextIndex], status: 'done' };
-            this.setState({
-                jobs,
-                completedCount: this.state.completedCount + 1,
-                lastProcessedMs: elapsed,
-            });
-        } catch (err: any) {
-            if (signal.aborted) return;
-            jobs[nextIndex] = { ...jobs[nextIndex], status: 'failed', error: err.message };
-            this.setState({ jobs, failedCount: this.state.failedCount + 1 });
+            // Small delay between jobs to avoid hammering the LLM
+            await new Promise(r => setTimeout(r, 300));
         }
-
-        // Small delay between jobs to avoid hammering the LLM
-        await new Promise(r => setTimeout(r, 300));
-
-        return this._processNext(signal);
     }
 
     // ── Computed Helpers ───────────────────────────────────────

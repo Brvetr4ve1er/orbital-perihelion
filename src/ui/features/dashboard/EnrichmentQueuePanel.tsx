@@ -125,9 +125,29 @@ export const EnrichmentQueuePanel = () => {
                     </div>
 
                     {/* ETA */}
-                    {queueState.isRunning && eta !== null && (
+                    {queueState.isRunning && !queueState.circuitBroken && eta !== null && (
                         <div style={{ fontSize: '0.75rem', color: '#9898a8', marginBottom: '14px', textAlign: 'center' }}>
                             ⏱ Temps restant estimé : <strong style={{ color: '#fff' }}>{formatETA(eta)}</strong>
+                        </div>
+                    )}
+
+                    {/* Circuit Breaker Warning */}
+                    {queueState.circuitBroken && (
+                        <div style={{
+                            background: 'rgba(239, 68, 68, 0.12)',
+                            border: '1px solid rgba(239, 68, 68, 0.3)',
+                            borderRadius: '10px',
+                            padding: '12px',
+                            marginBottom: '14px',
+                            textAlign: 'center',
+                        }}>
+                            <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#ef4444', marginBottom: '4px' }}>
+                                ⚡ Circuit Breaker Activé
+                            </div>
+                            <div style={{ fontSize: '0.72rem', color: '#f87171', lineHeight: 1.4 }}>
+                                3 échecs consécutifs détectés. Le LLM ou le scraper est peut-être hors ligne.
+                                Vérifiez la connexion et cliquez Reprendre.
+                            </div>
                         </div>
                     )}
 

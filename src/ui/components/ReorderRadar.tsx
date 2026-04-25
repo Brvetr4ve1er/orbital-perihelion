@@ -28,30 +28,29 @@ export const ReorderRadar = ({ products, onPickProduct, limit = 8 }: Props) => {
         <section className="reorder-radar">
             <div className="reorder-radar-header">
                 <div className="reorder-radar-title">
-                    🎯 Reorder Radar
+                    Réapprovisionnement
                     {queue.length > 0 && (
-                        <span className="badge">{queue.length} to reorder</span>
+                        <span className="badge">{queue.length} à commander</span>
                     )}
                 </div>
                 <div style={{ fontSize: 11, color: '#94a3b8' }}>
-                    {salesCount === 0 ? 'Import sales CSV to activate' : `${salesCount} sales records`}
+                    {salesCount === 0 ? 'Importer les ventes pour activer' : `${salesCount} enregistrement${salesCount !== 1 ? 's' : ''}`}
                 </div>
             </div>
 
             {salesCount === 0 ? (
                 <div className="reorder-radar-empty">
-                    Click <strong>📊 Sales</strong> in the header to import your order history.<br />
-                    Supports Shopify, WooCommerce, Square, and generic POS exports.
+                    <p>Importez un historique de ventes pour détecter les ruptures à venir.</p>
                 </div>
             ) : queue.length === 0 ? (
                 <div className="reorder-radar-empty">
-                    ✅ All products have adequate cover. Nothing urgent to reorder.
+                    <p>Tous les produits ont une couverture suffisante.</p>
                 </div>
             ) : (
                 <div className="reorder-list">
                     {queue.map(({ product, velocity }) => {
                         const sig = velocity.reorderSignal;
-                        const doc = Number.isFinite(velocity.daysOfCover) ? `${Math.round(velocity.daysOfCover)}d` : '—';
+                        const doc = Number.isFinite(velocity.daysOfCover) ? `${Math.round(velocity.daysOfCover)}j` : '—';
                         return (
                             <div
                                 key={product.identity.id}
@@ -63,13 +62,13 @@ export const ReorderRadar = ({ products, onPickProduct, limit = 8 }: Props) => {
                                     <div className="brand">{product.identity.brand}</div>
                                 </div>
                                 <div className="reorder-row-stock">
-                                    {velocity.onHand} left
+                                    {velocity.onHand} restant{velocity.onHand !== 1 ? 's' : ''}
                                 </div>
                                 <div className="reorder-row-velocity">
-                                    {velocity.velocity.toFixed(2)}/d
+                                    {velocity.velocity.toFixed(2)}/j
                                 </div>
                                 <div className={`reorder-row-doc ${sig === 'critical' ? 'critical' : 'warning'}`}>
-                                    {sig === 'critical' ? '🔥' : '⚠'} {doc}
+                                    {doc}
                                 </div>
                             </div>
                         );

@@ -1,6 +1,14 @@
 import { Product } from '../core/schema';
 import { ValidationReport } from '../core/validator';
 import { Persistence } from '../services/persistence';
+import { invalidateVelocityCache } from '../services/velocity';
+import { invalidateForecastCache } from '../services/forecast';
+
+/** Invalidates all derived analytics caches. Call after any product mutation. */
+function bustAnalyticsCaches() {
+    invalidateVelocityCache();
+    invalidateForecastCache();
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // State shape
@@ -16,6 +24,10 @@ interface State {
     importStatus: ImportStatus;
     importError: string | null;
     importReport: ValidationReport | null;
+    /** Monotonically-increasing timestamp — bumped on every product mutation.
+     *  Used as cache invalidation key by analytics/velocity/forecast services.
+     *  Changes even when products.length stays the same (e.g. enrichment, price edit). */
+    lastMutated: number;
 }
 
 type Listener = (state: State) => void;
@@ -33,6 +45,7 @@ class Store {
         importStatus: 'idle',
         importError: null,
         importReport: null,
+        lastMutated: 0,
     };
 
     private listeners: Set<Listener> = new Set();
@@ -63,14 +76,42 @@ class Store {
     }
 
     /** Called when parsing + enrichment completes successfully. */
-    importSucceeded(products: Product[], report: ValidationReport | null = null) {
+    importSucceeded(newProducts: Product[], report: ValidationReport | null = null) {
+        const existing = [...this.state.products];
+        const existingBySku = new Map<string, number>();
+        const existingByBarcode = new Map<string, number>();
+        
+        existing.forEach((p, index) => {
+            if (p.identity.sku) existingBySku.set(p.identity.sku, index);
+            if (p.enrichment?.barcode) existingByBarcode.set(p.enrichment.barcode, index);
+        });
+
+        for (const np of newProducts) {
+            let matchIndex = -1;
+            if (np.identity.sku && existingBySku.has(np.identity.sku)) {
+                matchIndex = existingBySku.get(np.identity.sku)!;
+            } else if (np.enrichment?.barcode && existingByBarcode.has(np.enrichment.barcode)) {
+                matchIndex = existingByBarcode.get(np.enrichment.barcode)!;
+            }
+
+            if (matchIndex >= 0) {
+                // Deduplicate: Keep the existing ID so IDB updates instead of duplicating
+                np.identity.id = existing[matchIndex].identity.id;
+                existing[matchIndex] = np;
+            } else {
+                existing.push(np);
+            }
+        }
+
         this.setState({
-            products,
-            filteredProducts: products,
+            products: existing,
+            filteredProducts: existing,
             importStatus: 'success',
             importError: null,
             importReport: report,
+            lastMutated: Date.now(),
         });
+        bustAnalyticsCaches();
     }
 
     /** Called when any stage of import fails. */
@@ -83,11 +124,8 @@ class Store {
         const products = this.state.products.map(p =>
             p.identity.id === updated.identity.id ? updated : p
         );
-        // NOTE: Only update `products` here. `filteredProducts` is derived by the
-        // Dashboard via useMemo(Engine.filterProducts) so we must NOT overwrite it
-        // here — doing so would clear any active search/filter the user has set.
-        this.setState({ products });
-        // [PH4-B] Persist via IndexedDB (updateOne is far cheaper than saveAll)
+        this.setState({ products, lastMutated: Date.now() });
+        bustAnalyticsCaches();
         Persistence.updateOne(updated).catch(e =>
             console.error('[Store] Failed to persist product update:', e)
         );
@@ -118,19 +156,20 @@ class Store {
                 },
             };
         });
-        this.setState({ products });
-        Persistence.saveAll(products).catch(e =>
+        this.setState({ products, lastMutated: Date.now() });
+        bustAnalyticsCaches();
+        Persistence.putMany(products).catch(e =>
             console.error('[Store] Failed to persist bulk price:', e)
         );
     }
 
-    /** Delete products by id (single or bulk). Persists the change to IDB. */
     deleteProducts(ids: string[]) {
         if (!ids.length) return;
         const idSet = new Set(ids);
         const products = this.state.products.filter(p => !idSet.has(p.identity.id));
-        this.setState({ products });
-        Persistence.saveAll(products).catch(e =>
+        this.setState({ products, lastMutated: Date.now() });
+        bustAnalyticsCaches();
+        Persistence.deleteMany(ids).catch(e =>
             console.error('[Store] Failed to persist delete:', e)
         );
     }

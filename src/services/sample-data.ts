@@ -47,3 +47,27 @@ export function generateSampleProducts(): Product[] {
     }
     return products;
 }
+
+export function generateStressTestProducts(count: number = 5000): Product[] {
+    const products: Product[] = [];
+    const len = ROWS.length;
+    for (let i = 0; i < count; i++) {
+        const baseRow = ROWS[i % len];
+        const id = `stress_${i}_${Math.random().toString(36).slice(2, 7)}`;
+        const raw = { 
+            ...baseRow, 
+            id, 
+            sku: id.toUpperCase(),
+            name: `${baseRow.name} - Version ${i + 1}`,
+            price_retail: baseRow.price_retail + (Math.random() * 5000 - 2500),
+            stock: Math.floor(Math.random() * 50)
+        };
+        const normalized = ProductAdapter.normalize(raw);
+        
+        // Mock enrichment
+        const enriched = { ...normalized } as Product;
+        enriched._searchIndex = buildSearchIndex(enriched);
+        products.push(enriched);
+    }
+    return products;
+}

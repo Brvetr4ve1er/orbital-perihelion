@@ -1,13 +1,13 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Product } from '../../core/schema';
 import { useSettings } from '../features/settings/useSettings';
 import { ProductAdapter } from '../../core/product-adapter';
-import { getVelocityMap } from '../../services/velocity';
-import { getAnalyticsMap } from '../../services/analytics';
-import { SalesService } from '../../services/sales';
-import { inventoryStore } from '../../state/store';
 import { Sparkline } from './Sparkline';
+
+/** Convert ALL CAPS or mixed text to Title Case */
+const titleCase = (s: string) =>
+    s.toLowerCase().replace(/(?:^|\s|[-/])\S/g, c => c.toUpperCase());
 
 interface ProductCardProps {
     product: Product;
@@ -21,23 +21,26 @@ interface ProductCardProps {
  * Product Card — dense commerce-grade tile.
  * Collapsed: scan-view (image, name, price, stock, 4 chips).
  * Expanded : full intelligence readout (specs, pros/cons, competitor prices, sources).
+ *
+ * Wrapped in React.memo with a custom comparator to prevent unnecessary re-renders
+ * during batch AI enrichment (only the card whose product changed will re-render).
  */
-export const ProductCard = ({ product, onClick, index = 0, inCompare, onToggleCompare }: ProductCardProps) => {
+const ProductCardInner = ({ product, onClick, index = 0, inCompare, onToggleCompare }: ProductCardProps) => {
     const settings = useSettings();
     const { currency, language } = settings.locale || { currency: 'DZD', language: 'fr-DZ' };
     const { cardLayout } = settings;
     const [expanded, setExpanded] = useState(false);
 
-    const id = product.identity;
-    const comm = product.commercial;
-    const enrich = product.enrichment;
+    const id = product.identity || ({} as any);
+    const comm = product.commercial || ({} as any);
+    const enrich = product.enrichment || ({} as any);
     const intel = enrich?.intelligence || product.knowledge?.insights;
-    const tech = product.technical;
+    const tech = product.technical || ({} as any);
 
     const retailPrice = comm.priceRange?.typical || 0;
     const stockQty = (product.observations?.stock?.[0]?.v as number) ?? 0;
     const stockStatus = stockQty > 5 ? 'in-stock' : stockQty > 0 ? 'low-stock' : 'out-of-stock';
-    const stockLabel = stockQty > 5 ? '🟢 In Stock' : stockQty > 0 ? '🟡 Low Stock' : '🔴 Out of Stock';
+    const stockLabel = stockQty > 5 ? 'En stock' : stockQty > 0 ? 'Stock faible' : 'Rupture';
 
     const priceFmt = useMemo(
         () => new Intl.NumberFormat(language, {
@@ -48,8 +51,7 @@ export const ProductCard = ({ product, onClick, index = 0, inCompare, onToggleCo
         [language, currency, comm.priceRange?.currency],
     );
 
-    const catIcon = ProductAdapter._categoryIcon(id.category);
-    const catLabel = ProductAdapter._categoryLabel(id.category);
+    const catLabel = ProductAdapter._categoryLabel(id?.category || 'other');
     const heroImage = product.visual?.heroImage || (enrich?.images && enrich.images[0]);
 
     // ── Competitor-price delta (if enriched) ──────────────────────────────────
@@ -64,22 +66,22 @@ export const ProductCard = ({ product, onClick, index = 0, inCompare, onToggleCo
     // ── Scan-strip chips (max 4) ──────────────────────────────────────────────
     const chips = useMemo(() => {
         const c: Array<{ label: string; type: string; title?: string }> = [];
-        if (id.category) c.push({ label: `${catIcon} ${catLabel}`, type: 'category' });
+        if (id.category) c.push({ label: catLabel, type: 'category' });
         if (id.brand) c.push({ label: id.brand, type: 'brand' });
         if (cardLayout.showSpecs && tech?.quickSpecs?.screenSize) c.push({ label: `${tech.quickSpecs.screenSize}"`, type: 'spec' });
         if (cardLayout.showMarketIntel && priceDelta) {
             const up = priceDelta.diff > 3;
             const down = priceDelta.diff < -3;
             c.push({
-                label: `${up ? '▲' : down ? '▼' : '●'} ${Math.abs(priceDelta.diff).toFixed(0)}% vs market`,
+                label: `${up ? '▲' : down ? '▼' : '●'} ${Math.abs(priceDelta.diff).toFixed(0)}% vs marché`,
                 type: up ? 'price-up' : down ? 'price-down' : 'price-fair',
-                title: `Avg market: ${priceFmt.format(priceDelta.avg)} across ${priceDelta.n} sources`,
+                title: `Moy. marché : ${priceFmt.format(priceDelta.avg)} sur ${priceDelta.n} source${priceDelta.n > 1 ? 's' : ''}`,
             });
         } else if (cardLayout.showStock) {
-            c.push({ label: `${stockQty} units`, type: 'stock' });
+            c.push({ label: `${stockQty} unité${stockQty !== 1 ? 's' : ''}`, type: 'stock' });
         }
         return c.slice(0, 4);
-    }, [id, catIcon, catLabel, tech, stockQty, priceDelta, priceFmt, cardLayout]);
+    }, [id, catLabel, tech, stockQty, priceDelta, priceFmt, cardLayout]);
 
     const hasIntel = !!(intel?.pros?.length || intel?.cons?.length || enrich?.description || enrich?.seoDescription);
     const sourceCount = enrich?.sources?.length || 0;
@@ -88,15 +90,9 @@ export const ProductCard = ({ product, onClick, index = 0, inCompare, onToggleCo
     // Stock percentile bar (0–20 units = 0–100%)
     const stockPct = Math.min(100, (stockQty / 20) * 100);
 
-    // ── Live sales intelligence ──────────────────────────────────────────────
-    const [, setTick] = useState(0);
-    useEffect(() => SalesService.subscribe(() => setTick(t => t + 1)), []);
-    const salesCount = SalesService.getCached().length;
-    // Shared cache across the whole catalog — pass the full product list
-    const allProducts = inventoryStore.getState().products;
-    const velocity  = useMemo(() => getVelocityMap(allProducts).get(product.identity.id),  [allProducts, product.identity.id, salesCount]);
-    const analytics = useMemo(() => getAnalyticsMap(allProducts).get(product.identity.id), [allProducts, product.identity.id, salesCount]);
-    const showSalesRow = cardLayout.showStock && salesCount > 0 && (!!velocity || !!analytics);
+    // ── Sales intelligence — lifted to parent, passed as props ────────────
+    const { velocity, analytics } = product as any;
+    const showSalesRow = cardLayout.showStock && (!!velocity || !!analytics);
 
     return (
         <motion.div
@@ -111,29 +107,29 @@ export const ProductCard = ({ product, onClick, index = 0, inCompare, onToggleCo
             <div className="card-top" onClick={onClick} style={{ cursor: 'pointer' }}>
                 <div className="card-image-container">
                     {cardLayout.showImage && heroImage ? (
-                        <img src={heroImage} alt={id.name} className="card-scan-img" loading="lazy" />
+                        <img src={heroImage} alt={id?.name || 'Produit'} className="card-scan-img" loading="lazy" />
                     ) : (
-                        <div className="card-scan-fallback" title={catLabel}>{catIcon}</div>
-                    )}
+                        <div className="card-scan-fallback" title={catLabel}>{ProductAdapter._categoryIcon(id?.category || 'other')}</div>
+                    ) }
                 </div>
                 {cardLayout.showStock && (
                     <div className={`scan-status-badge ${stockStatus}`}>{stockLabel}</div>
                 )}
                 {cardLayout.showAIVerdict && (enrich?.intelligence || product.knowledge?.insights) && (
-                    <div className="scan-ai-badge" title="Enriched by AI">✨ AI</div>
+                    <div className="scan-ai-badge" title="Enrichi par IA">IA</div>
                 )}
             </div>
 
             {/* CORE */}
             <div className="card-core" onClick={onClick} style={{ cursor: 'pointer' }}>
-                <h3 className="scan-name" title={id.name}>{id.name}</h3>
+                <h3 className="scan-name" title={id?.name || 'Sans nom'}>{titleCase(id?.name || 'Sans nom')}</h3>
                 <div className="scan-price-sku">
                     {cardLayout.showPrice && <span className="scan-price">{priceFmt.format(retailPrice)}</span>}
-                    <span className="scan-sku">{id.sku || id.model || 'N/A'}</span>
+                    <span className="scan-sku">{id.sku || id.model || '—'}</span>
                 </div>
                 {/* Stock bar */}
                 {cardLayout.showStock && (
-                    <div className="scan-stock-bar" title={`${stockQty} units`}>
+                    <div className="scan-stock-bar" title={`${stockQty} unité${stockQty !== 1 ? 's' : ''}`}>
                         <div className={`scan-stock-fill ${stockStatus}`} style={{ width: `${stockPct}%` }} />
                     </div>
                 )}
@@ -142,23 +138,23 @@ export const ProductCard = ({ product, onClick, index = 0, inCompare, onToggleCo
                 {showSalesRow && (
                     <div className="scan-sales-row">
                         {analytics?.tier && analytics.tier !== 'none' && (
-                            <span className={`scan-tier tv-tier-${analytics.tier}`} title={`ABC tier ${analytics.tier}`}>
+                            <span className={`scan-tier tv-tier-${analytics.tier}`} title={`Tier ABC ${analytics.tier}`}>
                                 {analytics.tier}
                             </span>
                         )}
                         {velocity && velocity.velocity > 0 && (
-                            <span className="scan-velocity" title={`${velocity.velocity.toFixed(2)} units/day`}>
-                                {velocity.velocity.toFixed(1)}/d
+                            <span className="scan-velocity" title={`${velocity.velocity.toFixed(2)} unités/jour`}>
+                                {velocity.velocity.toFixed(1)}/j
                             </span>
                         )}
                         {velocity?.reorderSignal === 'critical' && (
-                            <span className="scan-doc tv-doc-critical">🔥 {Math.round(velocity.daysOfCover)}d</span>
+                            <span className="scan-doc tv-doc-critical">{Math.round(velocity.daysOfCover)}j couverture</span>
                         )}
                         {velocity?.reorderSignal === 'warning' && (
-                            <span className="scan-doc tv-doc-warning">⚠ {Math.round(velocity.daysOfCover)}d</span>
+                            <span className="scan-doc tv-doc-warning">{Math.round(velocity.daysOfCover)}j couverture</span>
                         )}
                         {velocity?.reorderSignal === 'dead' && (
-                            <span className="scan-doc tv-doc-dead">💀 stale</span>
+                            <span className="scan-doc tv-doc-dead">Inactif</span>
                         )}
                         {analytics?.daily30?.some(v => v > 0) && (
                             <div className="scan-spark-wrap">
@@ -204,47 +200,70 @@ export const ProductCard = ({ product, onClick, index = 0, inCompare, onToggleCo
                         )}
                         {cardLayout.showAIVerdict && intel?.cons && intel.cons.length > 0 && (
                             <div className="scan-cons">
-                                {intel.cons.slice(0, 2).map((p, i) => <span key={i}>⚠ {p}</span>)}
+                                {intel.cons.slice(0, 2).map((p, i) => <span key={i}>— {p}</span>)}
                             </div>
                         )}
                         {cardLayout.showMarketIntel && competitorCount > 0 && (
                             <div className="scan-market">
-                                📊 {competitorCount} competitor price{competitorCount > 1 ? 's' : ''}
+                                {competitorCount} prix concurrent{competitorCount > 1 ? 's' : ''}
                                 {sourceCount > 0 && ` · ${sourceCount} source${sourceCount > 1 ? 's' : ''}`}
                             </div>
                         )}
                         {cardLayout.showSpecs && tech?.quickSpecs && (tech.quickSpecs.screenSize || tech.quickSpecs.refreshRate) && (
                             <div className="scan-specs">
-                                {tech.quickSpecs.screenSize && <span>📐 {tech.quickSpecs.screenSize}"</span>}
-                                {tech.quickSpecs.refreshRate && <span>⚡ {tech.quickSpecs.refreshRate}</span>}
-                                {tech.quickSpecs.resolution?.label && <span>🖥 {tech.quickSpecs.resolution.label}</span>}
+                                {tech.quickSpecs.screenSize && <span>{tech.quickSpecs.screenSize}"</span>}
+                                {tech.quickSpecs.refreshRate && <span>{tech.quickSpecs.refreshRate}</span>}
+                                {tech.quickSpecs.resolution?.label && <span>{tech.quickSpecs.resolution.label}</span>}
                             </div>
                         )}
                     </motion.div>
                 )}
             </AnimatePresence>
 
-            {/* ACTIONS */}
+            {/* ACTIONS — separated clearly */}
             <div className="scan-action-zone">
                 <button
-                    className="scan-action-btn"
+                    className={`scan-action-btn ${inCompare ? 'scan-action-active' : ''}`}
                     onClick={(e) => { e.stopPropagation(); onToggleCompare?.(); }}
                 >
-                    {inCompare ? '✓ Selected' : '⚖ Compare'}
+                    {inCompare ? '✓ Sélectionné' : 'Comparer'}
                 </button>
                 {hasIntel && (
                     <button
                         className="scan-action-btn"
                         onClick={(e) => { e.stopPropagation(); setExpanded(v => !v); }}
-                        title={expanded ? 'Collapse' : 'Expand intelligence'}
+                        title={expanded ? 'Réduire' : 'Afficher les détails IA'}
                     >
-                        {expanded ? '▲ Less' : '▼ More'}
+                        {expanded ? '▲ Moins' : '▼ Plus'}
                     </button>
                 )}
                 <button className="scan-action-btn primary" onClick={(e) => { e.stopPropagation(); onClick(); }}>
-                    Details →
+                    Détails
                 </button>
             </div>
         </motion.div>
     );
 };
+
+/**
+ * Custom comparator for React.memo.
+ * Only re-renders when meaningful product data changes, not on every store tick.
+ */
+function arePropsEqual(prev: ProductCardProps, next: ProductCardProps): boolean {
+    // Different product entirely
+    if (prev.product.identity.id !== next.product.identity.id) return false;
+    // Compare toggle changed
+    if (prev.inCompare !== next.inCompare) return false;
+    // Product was updated (lastUpdated is bumped by SchemaMapper on enrichment)
+    if (prev.product.identity.lastUpdated !== next.product.identity.lastUpdated) return false;
+    // Enrichment data appeared or changed
+    const prevEnriched = !!(prev.product.enrichment?.competitorPrices?.length);
+    const nextEnriched = !!(next.product.enrichment?.competitorPrices?.length);
+    if (prevEnriched !== nextEnriched) return false;
+    // Price changed
+    if (prev.product.commercial?.priceRange?.typical !== next.product.commercial?.priceRange?.typical) return false;
+    // Everything else is the same — skip re-render
+    return true;
+}
+
+export const ProductCard = React.memo(ProductCardInner, arePropsEqual);

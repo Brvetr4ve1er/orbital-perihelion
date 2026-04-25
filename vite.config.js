@@ -38,25 +38,39 @@ export default defineConfig({
                 changeOrigin: true,
                 rewrite: (path) => path.replace(/^\/api\/ollama/, ''),
             },
-            '/api/proxy': {
+            // ── Python Sidecar (:5001) ──────────────────────
+            '/api/health': {
                 target: 'http://127.0.0.1:5001',
                 changeOrigin: true,
+                rewrite: (path) => path.replace(/^\/api\/health/, '/health'),
             },
             '/api/search': {
-                target: 'http://127.0.0.1:5002',
+                target: 'http://127.0.0.1:5001',
                 changeOrigin: true,
                 rewrite: (path) => path.replace(/^\/api\/search/, '/search'),
             },
             '/api/scrape': {
-                target: 'http://127.0.0.1:5002',
+                target: 'http://127.0.0.1:5001',
                 changeOrigin: true,
                 rewrite: (path) => path.replace(/^\/api\/scrape/, '/scrape'),
             },
-            '/api/enrich-web': {
-                target: 'http://127.0.0.1:5002',
+            // Must come before /api/enrich to avoid prefix collision
+            '/api/enrich-product': {
+                target: 'http://127.0.0.1:5001',
                 changeOrigin: true,
-                rewrite: (path) => path.replace(/^\/api\/enrich-web/, '/enrich'),
-            }
+                rewrite: (path) => path.replace(/^\/api\/enrich-product/, '/enrich-product'),
+            },
+            '/api/enrich': {
+                target: 'http://127.0.0.1:5001',
+                changeOrigin: true,
+                rewrite: (path) => path.replace(/^\/api\/enrich/, '/enrich'),
+            },
+            // ── CORS Proxy for DDG HTML fallback (:5001) ────
+            '/api/proxy': {
+                target: 'http://127.0.0.1:5001',
+                changeOrigin: true,
+                rewrite: (path) => path.replace(/^\/api\/proxy/, '/proxy'),
+            },
         }
     },
 });
