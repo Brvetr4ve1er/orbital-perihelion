@@ -11,8 +11,22 @@ export const ProductAdapter = {
     normalize(raw: any): Product {
         const ts = new Date().toISOString();
 
+        const generateDeterministicId = (r: any) => {
+            const seed = [r.sku, r.SKU, r.barcode, r.EAN, r.ean, r.name, r.NAME, r.brand, r.BRAND]
+                .filter(Boolean)
+                .join('|')
+                .toLowerCase();
+            if (!seed) return Math.random().toString(36).substr(2, 9);
+            let hash = 0;
+            for (let i = 0; i < seed.length; i++) {
+                hash = ((hash << 5) - hash) + seed.charCodeAt(i);
+                hash |= 0;
+            }
+            return Math.abs(hash).toString(16) + seed.length.toString(16);
+        };
+
         // Support both the new RawProductRow and any legacy raw shape
-        const id    = String(raw.id || raw.ID || raw.barcode || raw.SKU || Math.random().toString(36).substr(2, 9));
+        const id    = String(raw.id || raw.ID || generateDeterministicId(raw));
         let name  = (raw.name || raw.NAME || raw.nom || raw.Nom || raw.designation || raw.title || raw.label || raw.description || '').trim();
         const brand = (raw.brand || raw.BRAND || raw.marque || raw.Marque || '').trim();
         
@@ -147,13 +161,8 @@ export const ProductAdapter = {
         // [P0-4] Runtime Validation via Zod
         const result = ProductSchema.safeParse(p_obj);
         if (!result.success) {
-            console.error(`[Adapter] Validation failed for product ${id}:`);
-            result.error.issues.forEach(issue => {
-                console.error(`  - [${issue.path.join('.')}] ${issue.message}`);
-            });
-            // Still compute search index for failed-validation products
-            p_obj._searchIndex = buildSearchIndex(p_obj as Product);
-            return p_obj as Product;
+            const errList = result.error.issues.map(issue => `[${issue.path.join('.')}] ${issue.message}`).join(', ');
+            throw new Error(`Validation failed for product ${id}: ${errList}`);
         }
 
         // Stamp the pre-computed search index

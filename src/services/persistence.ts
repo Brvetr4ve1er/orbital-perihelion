@@ -128,9 +128,11 @@ export const Persistence = {
             try {
                 const raw = localStorage.getItem('pkos_inventory');
                 const existing: Product[] = raw ? JSON.parse(raw) : [];
-                const updateMap = new Map(products.map(p => [p.identity.id, p]));
-                const merged = existing.map(p => updateMap.get(p.identity.id) || p);
-                localStorage.setItem('pkos_inventory', JSON.stringify(merged));
+                const existingMap = new Map(existing.map(p => [p.identity.id, p]));
+                for (const p of products) {
+                    existingMap.set(p.identity.id, p);
+                }
+                localStorage.setItem('pkos_inventory', JSON.stringify(Array.from(existingMap.values())));
             } catch (e) {
                 console.error('[Persistence] localStorage putMany failed:', e);
             }

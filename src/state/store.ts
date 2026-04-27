@@ -139,11 +139,12 @@ class Store {
         if (!ids.length || !Number.isFinite(pct)) return;
         const idSet = new Set(ids);
         const factor = 1 + pct / 100;
+        const changed: Product[] = [];
         const products = this.state.products.map(p => {
             if (!idSet.has(p.identity.id)) return p;
             const pr = p.commercial?.priceRange;
             if (!pr || !pr.typical) return p;
-            return {
+            const updated = {
                 ...p,
                 commercial: {
                     ...p.commercial,
@@ -155,12 +156,16 @@ class Store {
                     },
                 },
             };
+            changed.push(updated);
+            return updated;
         });
         this.setState({ products, lastMutated: Date.now() });
         bustAnalyticsCaches();
-        Persistence.putMany(products).catch(e =>
-            console.error('[Store] Failed to persist bulk price:', e)
-        );
+        if (changed.length > 0) {
+            Persistence.putMany(changed).catch(e =>
+                console.error('[Store] Failed to persist bulk price:', e)
+            );
+        }
     }
 
     deleteProducts(ids: string[]) {

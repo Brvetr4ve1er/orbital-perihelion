@@ -40,7 +40,7 @@ PKOS is a state-of-the-art dashboard designed to transform raw inventory data in
 ### Prerequisites
 - Node.js (v18 or higher recommended)
 - LM Studio running locally with a model loaded (e.g. `deepseek-r1`) listening on port `1234`.
-- The PKOS Python Proxy server running locally on port `5000`.
+- The PKOS Python Proxy server running locally on port `5001`.
 
 ### Configuration
 Optionally configure your `.env`:

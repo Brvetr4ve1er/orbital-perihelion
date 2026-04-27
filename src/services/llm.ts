@@ -139,8 +139,8 @@ export const LLMService = {
     },
     savePreset(name: string) {
         const list = this.getPresets().filter(p => p.name !== name);
-        const { url, model, key } = this.getConfig();
-        list.push({ name, url, model, key });
+        const { url, model } = this.getConfig();
+        list.push({ name, url, model, key: '' });
         localStorage.setItem('pkos_llm_presets', JSON.stringify(list));
     },
     deletePreset(name: string) {

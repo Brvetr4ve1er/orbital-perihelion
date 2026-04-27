@@ -69,6 +69,45 @@ function detectDelimiter(firstLine: string): string {
     return best;
 }
 
+function parseCsvLines(csvText: string, delimiter: string): string[][] {
+    const rows: string[][] = [];
+    let currentRow: string[] = [];
+    let currentField = '';
+    let inQuotes = false;
+
+    for (let i = 0; i < csvText.length; i++) {
+        const char = csvText[i];
+        const nextChar = csvText[i + 1];
+
+        if (char === '"') {
+            if (inQuotes && nextChar === '"') {
+                currentField += '"';
+                i++; // Skip the escaped quote
+            } else {
+                inQuotes = !inQuotes;
+            }
+        } else if (char === delimiter && !inQuotes) {
+            currentRow.push(currentField.trim());
+            currentField = '';
+        } else if ((char === '\n' || char === '\r') && !inQuotes) {
+            if (char === '\r' && nextChar === '\n') i++; // Skip \n
+            currentRow.push(currentField.trim());
+            rows.push(currentRow);
+            currentRow = [];
+            currentField = '';
+        } else {
+            currentField += char;
+        }
+    }
+
+    if (currentField || currentRow.length > 0) {
+        currentRow.push(currentField.trim());
+        rows.push(currentRow);
+    }
+
+    return rows.filter(r => r.some(f => f.trim() !== ''));
+}
+
 function parseRow(line: string, delimiter: string): string[] {
     const values: string[] = [];
     let current = '';
@@ -222,22 +261,20 @@ export const UniversalCSVParser = {
     parse(csvText: string): RawProductRow[] {
         if (!csvText?.trim()) return [];
 
-        // Normalize line endings
-        const lines = csvText.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
-        const nonEmpty = lines.filter(l => l.trim());
-        if (nonEmpty.length < 2) return [];
+        const firstLineBreak = csvText.indexOf('\n');
+        const firstLine = firstLineBreak > -1 ? csvText.substring(0, firstLineBreak) : csvText;
+        const delimiter = detectDelimiter(firstLine);
+        
+        const rowsValues = parseCsvLines(csvText, delimiter);
+        if (rowsValues.length < 2) return [];
 
-        const delimiter = detectDelimiter(nonEmpty[0]);
-        const rawHeaders = parseRow(nonEmpty[0], delimiter);
+        const rawHeaders = rowsValues[0];
         const mapping = mapHeaders(rawHeaders);
 
         const rows: RawProductRow[] = [];
 
-        for (let i = 1; i < nonEmpty.length; i++) {
-            const line = nonEmpty[i];
-            if (!line.trim()) continue;
-
-            const values = parseRow(line, delimiter);
+        for (let i = 1; i < rowsValues.length; i++) {
+            const values = rowsValues[i];
             if (values.length < 2) continue; // skip degenerate rows
 
             // Build raw object with all columns preserved
@@ -300,11 +337,16 @@ export const UniversalCSVParser = {
      * Useful for debugging unknown formats.
      */
     diagnose(csvText: string): { delimiter: string; headers: string[]; mappedFields: string[]; unmappedHeaders: string[] } {
-        const lines = csvText.replace(/\r\n/g, '\n').split('\n').filter(l => l.trim());
-        if (!lines.length) return { delimiter: ',', headers: [], mappedFields: [], unmappedHeaders: [] };
-
-        const delimiter = detectDelimiter(lines[0]);
-        const headers = parseRow(lines[0], delimiter);
+        if (!csvText?.trim()) return { delimiter: ',', headers: [], mappedFields: [], unmappedHeaders: [] };
+        
+        const firstLineBreak = csvText.indexOf('\n');
+        const firstLine = firstLineBreak > -1 ? csvText.substring(0, firstLineBreak) : csvText;
+        const delimiter = detectDelimiter(firstLine);
+        
+        const rowsValues = parseCsvLines(csvText.substring(0, Math.min(csvText.length, 5000)), delimiter);
+        if (rowsValues.length === 0) return { delimiter, headers: [], mappedFields: [], unmappedHeaders: [] };
+        
+        const headers = rowsValues[0];
         const mapping = mapHeaders(headers);
         const mappedIndices = new Set(Object.values(mapping));
 

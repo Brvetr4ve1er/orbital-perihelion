@@ -29,6 +29,24 @@ export const Parser = {
         }
 
         console.log(`[Parser] Extracted ${rows.length} rows → normalizing to CPO...`);
-        return rows.map(row => ProductAdapter.fromRawRow(row));
+        const validProducts: Product[] = [];
+        let errors = 0;
+        
+        for (const row of rows) {
+            try {
+                validProducts.push(ProductAdapter.fromRawRow(row));
+            } catch (err: any) {
+                if (errors < 5) {
+                    console.warn(`[Parser] Skipping invalid row: ${err.message}`);
+                }
+                errors++;
+            }
+        }
+        
+        if (errors > 0) {
+            console.warn(`[Parser] Skipped ${errors} invalid rows during normalization.`);
+        }
+        
+        return validProducts;
     },
 };

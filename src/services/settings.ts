@@ -57,7 +57,7 @@ export interface Settings {
 export const DEFAULT_SETTINGS: Settings = {
     theme: { mode: 'dark', accentColor: '#7c4dff', density: 'comfortable' },
     llm: {
-        url: 'http://localhost:1234/v1',
+        url: '/api/llm',
         model: 'local-model',
         key: '',
         temperature: 0.3,
@@ -128,7 +128,10 @@ class SettingsStore {
 
     private persist() {
         try {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(this.state));
+            const clone = structuredClone(this.state);
+            clone.llm.key = '';
+            clone.scraping.firecrawlKey = '';
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(clone));
         } catch (e) {
             console.error('[Settings] Failed to persist:', e);
         }

@@ -22,6 +22,8 @@ import hashlib
 import json
 import os
 import time
+import ipaddress
+from urllib.parse import urlparse
 from contextlib import asynccontextmanager
 from typing import Any, Optional
 from urllib.parse import quote_plus
@@ -49,6 +51,7 @@ async def _db() -> aiosqlite.Connection:
     await db.execute(
         "CREATE TABLE IF NOT EXISTS cache (k TEXT PRIMARY KEY, v TEXT, ts INTEGER)"
     )
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_cache_ts ON cache(ts)")
     await db.commit()
     return db
 
@@ -66,6 +69,8 @@ async def cache_get(k: str) -> Optional[dict]:
             return None
         v, ts = row
         if time.time() - ts > CACHE_TTL:
+            await db.execute("DELETE FROM cache WHERE k=?", (k,))
+            await db.commit()
             return None
         return json.loads(v)
     finally:
@@ -75,9 +80,12 @@ async def cache_get(k: str) -> Optional[dict]:
 async def cache_set(k: str, v: dict) -> None:
     db = await _db()
     try:
+        now = int(time.time())
+        if now % 10 == 0:
+            await db.execute("DELETE FROM cache WHERE ts < ?", (now - CACHE_TTL,))
         await db.execute(
             "INSERT OR REPLACE INTO cache (k,v,ts) VALUES (?,?,?)",
-            (k, json.dumps(v), int(time.time())),
+            (k, json.dumps(v), now),
         )
         await db.commit()
     finally:
@@ -394,8 +402,8 @@ app = FastAPI(title="PKOS Scraper Sidecar v2", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
+    allow_origins=["http://localhost:5000", "http://127.0.0.1:5000"],
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -406,9 +414,29 @@ async def health():
     return {"ok": True, "version": "2.0", "searxng": SEARXNG_URL, "cache_ttl_s": CACHE_TTL}
 
 
+def is_safe_url(url: str) -> bool:
+    try:
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https"):
+            return False
+        if parsed.hostname in ("localhost", "127.0.0.1", "0.0.0.0", "::1"):
+            return False
+        # Optional stricter IP check if hostname resolves to an IP directly
+        try:
+            ip = ipaddress.ip_address(parsed.hostname)
+            if ip.is_private or ip.is_loopback or ip.is_multicast:
+                return False
+        except ValueError:
+            pass # hostname is a domain name, not raw IP
+        return True
+    except Exception:
+        return False
+
 @app.get("/proxy")
 async def proxy(url: str):
     """Simple GET proxy for CORS bypass (e.g. DDG fallback)."""
+    if not is_safe_url(url):
+        raise HTTPException(status_code=400, detail="Unsafe or invalid proxy target")
     try:
         async with httpx.AsyncClient(follow_redirects=True, timeout=10.0) as client:
             resp = await client.get(url, headers={"User-Agent": "Mozilla/5.0"})

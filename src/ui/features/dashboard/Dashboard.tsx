@@ -13,6 +13,7 @@ import { SalesKPIStrip } from '../../components/SalesKPIStrip';
 import { RevenueChart } from '../../components/RevenueChart';
 import { CategoryLeaderboard } from '../../components/CategoryLeaderboard';
 import { InsightsFeed } from '../../components/InsightsFeed';
+import { ForecastPanel } from '../../components/ForecastPanel';
 import { Product } from '../../../core/schema';
 import { SalesService } from '../../../services/sales';
 import { getVelocityMap } from '../../../services/velocity';
@@ -176,6 +177,10 @@ export const Dashboard = () => {
 
             <ErrorBoundary>
                 <RevenueChart products={state.products} />
+            </ErrorBoundary>
+
+            <ErrorBoundary>
+                <ForecastPanel products={state.products} onPickProduct={setSelectedProduct} />
             </ErrorBoundary>
 
             <div className="intel-panels intel-panels-3">

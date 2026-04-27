@@ -54,10 +54,10 @@ export interface ProductEnrichBundle {
 
 let _available: boolean | null = null;
 
-async function _post<T>(path: string, body: any, timeoutMs = 30000): Promise<T | null> {
+async function _post<T>(path: string, body: any, timeoutMs = 30000): Promise<T> {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), timeoutMs);
     try {
-        const ctrl = new AbortController();
-        const t = setTimeout(() => ctrl.abort(), timeoutMs);
         const r = await fetch(path, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -65,10 +65,14 @@ async function _post<T>(path: string, body: any, timeoutMs = 30000): Promise<T |
             signal: ctrl.signal,
         });
         clearTimeout(t);
-        if (!r.ok) return null;
+        if (!r.ok) {
+            const txt = await r.text().catch(() => '');
+            throw new Error(`HTTP ${r.status}: ${txt || r.statusText}`);
+        }
         return (await r.json()) as T;
-    } catch {
-        return null;
+    } catch (e: any) {
+        clearTimeout(t);
+        throw new Error(`Request to ${path} failed: ${e.message}`);
     }
 }
 
@@ -97,16 +101,15 @@ export const Scraper = {
     },
 
     async search(query: string, max = 8): Promise<SearchResponse> {
-        const res = await _post<SearchResponse>('/api/search', { query, max }, 15000);
-        return res ?? { query, source: 'unavailable', results: [] };
+        return await _post<SearchResponse>('/api/search', { query, max }, 15000);
     },
 
-    async scrape(url: string, mode: 'auto' | 'crawl4ai' | 'playwright' | 'httpx' = 'auto'): Promise<ScrapeResponse | null> {
+    async scrape(url: string, mode: 'auto' | 'crawl4ai' | 'playwright' | 'httpx' = 'auto'): Promise<ScrapeResponse> {
         return await _post<ScrapeResponse>('/api/scrape', { url, mode }, 30000);
     },
 
     /** Legacy: generic enrichment bundle. */
-    async enrichWeb(query: string, max_sources = 5, urls?: string[]): Promise<EnrichBundle | null> {
+    async enrichWeb(query: string, max_sources = 5, urls?: string[]): Promise<EnrichBundle> {
         return await _post<EnrichBundle>('/api/enrich', { query, max_sources, urls }, 60000);
     },
 
@@ -123,7 +126,7 @@ export const Scraper = {
         category: string,
         price: number,
         maxSources = 6
-    ): Promise<ProductEnrichBundle | null> {
+    ): Promise<ProductEnrichBundle> {
         return await _post<ProductEnrichBundle>(
             '/api/enrich-product',
             { name, brand, sku, category, price, max_sources: maxSources },

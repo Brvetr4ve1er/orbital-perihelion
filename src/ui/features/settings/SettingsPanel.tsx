@@ -30,7 +30,10 @@ export const SettingsPanel: React.FC<Props> = ({ open, onClose }) => {
 
     const exportAll = async () => {
         const products = await Persistence.loadAll();
-        const payload = { settings, products, exportedAt: new Date().toISOString() };
+        const safeSettings = structuredClone(settings);
+        safeSettings.llm.key = '';
+        safeSettings.scraping.firecrawlKey = '';
+        const payload = { settings: safeSettings, products, exportedAt: new Date().toISOString() };
         const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
