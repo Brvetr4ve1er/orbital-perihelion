@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { Product } from '../../../core/schema';
 import { getSalesKPIs } from '../../../services/analytics';
 import { getVelocityMap } from '../../../services/velocity';

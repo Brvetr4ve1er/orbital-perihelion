@@ -7,9 +7,9 @@ import React from 'react';
 
 interface GraphCanvasProps {
   useCanvas: boolean;
-  svgRef: React.RefObject<SVGSVGElement>;
-  canvasRef: React.RefObject<HTMLCanvasElement>;
-  containerRef: React.RefObject<HTMLDivElement>;
+  svgRef: React.RefObject<SVGSVGElement | null>;
+  canvasRef: React.RefObject<HTMLCanvasElement | null>;
+  containerRef: React.RefObject<HTMLDivElement | null>;
 }
 
 export const GraphCanvas: React.FC<GraphCanvasProps> = ({
@@ -30,13 +30,13 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({
     >
       {useCanvas ? (
         <canvas
-          ref={canvasRef as React.RefObject<HTMLCanvasElement>}
+          ref={canvasRef}
           style={{ display: 'block', width: '100%', height: '100%' }}
           aria-label="Node graph (canvas mode)"
         />
       ) : (
         <svg
-          ref={svgRef as React.RefObject<SVGSVGElement>}
+          ref={svgRef}
           style={{ display: 'block', width: '100%', height: '100%' }}
           aria-label="Node graph"
         />

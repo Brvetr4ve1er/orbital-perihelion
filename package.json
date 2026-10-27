@@ -1,32 +1,21 @@
 {
-  "name": "shopifoo",
+  "name": "pkos-orbital-perihelion",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "PKOS — Product Knowledge Operating System. Local commercial intelligence engine for inventory ingestion, enrichment and analytics.",
+  "private": true,
+  "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "module",
-  "devDependencies": {
-    "@types/aos": "^3.0.7",
-    "@types/d3": "^7.4.3",
-    "@types/react": "^19.2.14",
-    "@types/react-dom": "^19.2.3",
-    "vite": "^7.3.1"
-  },
+  "license": "UNLICENSED",
   "dependencies": {
     "@tanstack/react-virtual": "^3.13.24",
-    "@vitejs/plugin-react": "^5.1.4",
     "aos": "^2.3.4",
     "d3": "^7.9.0",
-    "d3-color": "^3.1.0",
     "d3-force": "^3.0.0",
-    "d3-scale": "^4.0.2",
     "d3-selection": "^3.0.0",
     "d3-zoom": "^3.0.0",
     "framer-motion": "^12.38.0",
@@ -34,5 +23,14 @@
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/aos": "^3.0.7",
+    "@types/d3": "^7.4.3",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.4",
+    "typescript": "^5.6.3",
+    "vite": "^7.3.1"
   }
 }

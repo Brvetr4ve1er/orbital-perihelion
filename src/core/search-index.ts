@@ -38,7 +38,7 @@ export function buildSearchIndex(p: Product): string {
 
     // Include observation values (stock status, etc.)
     if (p.observations) {
-        for (const [key, obs] of Object.entries(p.observations)) {
+        for (const [, obs] of Object.entries(p.observations)) {
             if (Array.isArray(obs) && obs[0]?.v) {
                 parts.push(String(obs[0].v));
             }

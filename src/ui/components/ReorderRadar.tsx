@@ -2,7 +2,7 @@
  * Reorder Radar — surfaces products that will run out based on sales velocity.
  * Critical = <7 days of cover or OOS with demand. Warning = <21 days.
  */
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Product } from '../../core/schema';
 import { getReorderQueue, invalidateVelocityCache } from '../../services/velocity';
 import { SalesService } from '../../services/sales';

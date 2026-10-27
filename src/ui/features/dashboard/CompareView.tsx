@@ -1,5 +1,4 @@
-import React, { useMemo } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useMemo } from 'react';
 import { Product } from '../../../core/schema';
 import { ProductAdapter } from '../../../core/product-adapter';
 import { useSettings } from '../settings/useSettings';
@@ -147,7 +146,7 @@ export const CompareView = ({
                 {/* Header row — product thumbnails + names */}
                 <div className="cmp-row cmp-header-row">
                     <div className="cmp-label-col" />
-                    {selected.map((p, i) => (
+                    {selected.map((p) => (
                         <div key={p.identity.id} className="cmp-cell cmp-header-cell">
                             {p.visual?.heroImage && (
                                 <img

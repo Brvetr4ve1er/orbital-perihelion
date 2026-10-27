@@ -1,51 +1,235 @@
-# Project Functioning: Deep Dive
+# Functioning
 
-The intelligence of the PKOS (Product Knowledge Operating System) is built on a multi-stage pipeline that processes raw inventory data into structured, enriched Canonical Product Objects (CPO).
+This document describes the actual runtime path implemented in the repo.
 
-## 1. Universal Data Ingestion (`UniversalCSVParser.ts`)
-When a CSV is uploaded, the `UniversalCSVParser` executes a format-agnostic extraction strategy:
-- **Delimiter Detection**: Auto-detects `,`, `;`, `\t`, or `|` indices.
-- **Fuzzy Header Mapping**: Maps 50+ French/English header variants (e.g., "PV TTC", "Prix de Vente") to canonical fields using normalized key matching.
-- **Quote-Aware Parsing**: Handles complex CSV nuances like escaped quotes (`""`) and newlines within cells.
-- **Diagnostics**: Generates a summary of detected columns to assist the user in case of mapping ambiguities.
+## 1. App Startup
 
-## 2. Canonical Normalization (`ProductAdapter.ts`)
-The raw rows are passed to the `ProductAdapter`, which transforms them into the **CPO v4.1** schema:
-- **Fact-Level Architecture**: instead of flat fields, it initializes an `observations` store.
-- **Source Tracking**: Tracks if a brand was explicitly provided in the CSV or needs regex inference.
-- **Price/Stock Normalization**: Converts various currency and quantity formats into clean numbers.
-- **Sustainability**: Implements `toLegacy()` shims to remain compatible with older dashboard components that expect flat objects.
+- `src/main.tsx` boots the main dashboard app.
+- `src/graph-main.tsx` boots a separate graph-only page.
+- `src/ui/App.tsx` initializes AOS, subscribes to the product store, pings the configured LLM endpoint, loads cached sales records, and restores persisted products from storage.
 
-## 3. Intelligence enrichment (`EnrichmentService.ts`)
-This is the "Brain" of the system, running logic to fill gaps:
-- **Brand Detection**: High-priority regex matching for known brands (Samsung, Condor, Iris, etc.) triggered only if the CSV source is empty.
-- **Category Classification**: Uses 50+ optimized regex patterns to sort products into categories like `tv`, `washing_machine`, or `mixer`.
-- **Fact Consensus**: Aggregates observations from different sources (CSV, Regex, LLM Scraper) and selects the "winner" based on confidence tiers.
-- **Curated DB Overlay**: Exact-match overrides for high-value products from a built-in "Ground Truth" database.
+Important detail:
 
-## 4. Batch Enrichment Queue (`enrichment-queue.ts`)
-To handle large-scale LLM processing without overwhelming local resources:
-- **Sequential Processing**: Jobs are processed one at a time to respect local VRAM limits and prevent rate-limiting.
-- **Stateful Management**: Tracks `pending`, `running`, `done`, `failed`, and `skipped` statuses for every item in the inventory.
-- **Real-time Feedback**: Computes rolling ETA and progress percentages, allowing the user to monitor long-running enrichment sessions.
-- **Immediate Persistence**: Results are merged into the store and persisted to IndexedDB as soon as each job completes.
+- Product restore comes from `Persistence.loadAll()`.
+- The dashboard renders only after products exist in memory.
+- The open product modal is kept in sync with store updates by `Dashboard.tsx`.
 
-## 5. Graph Visualization System (`src/graph/`)
-An advanced relationship explorer powered by **D3.js**:
-- **Hybrid Rendering**: Automatically switches between **SVG** (for high interactivity) and **Canvas** (for high performance at scale > 5000 nodes).
-- **Level of Detail (LOD)**: Dynamically adjusts visual complexity based on zoom level—hiding labels or entire nodes to maintain fluid performance.
-- **Force Simulation**: Uses a multi-force engine (charge, link, collision) to naturally cluster products by brand or category.
-- **Position Persistence**: Node coordinates can be saved and reloaded, allowing users to build a permanent mental map of their inventory.
+## 2. Inventory Import Path
 
-## 6. Background Pipeline (`import.worker.ts`)
-To ensure the UI remains responsive (60fps) during heavy ingestion:
-- **Web Worker Offloading**: The entire parsing and enrichment loop runs on a background thread.
-- **Progress Tracking**: Real-time progress updates are sent back to the main thread to drive UI loaders.
+The import pipeline is:
 
-## 7. Persistence & State Management
-- **Observable Store**: A zero-dependency state container handles the global product list and search/filter states with atomic updates.
-- **IndexedDB**: Uses the `idb` wrapper to persist the catalog locally in the browser, allowing for gigabyte-scale inventories without performance degradation.
+1. User selects a CSV in `App.tsx`.
+2. The file is read as UTF-8 text with `FileReader.readAsText(file, 'utf-8')`.
+3. A Vite module worker runs `src/workers/import.worker.ts`.
+4. The worker calls:
+   `Parser.parse(csvText)` -> `EnrichmentService.enrich(product)` -> `ProductValidator.validateAll(products)`.
+5. The main thread stores results in `inventoryStore.importSucceeded(...)`.
+6. The product array is persisted through `Persistence.saveAll(...)`.
 
-## 8. AI & Proxy Layer
-- **Local LLM**: Requests are proxied via Vite to LM Studio (`/api/llm`) for zero-latency, private product analysis.
-- **Scraper Proxy**: A Python-based back-end handles DuckDuckGo searches and web content extraction, providing clean markdown/text to the LLM.
+What "enrichment on import" means here:
+
+- It is rule-based enrichment only.
+- It does not call the LLM.
+- It always runs during worker import, regardless of the `autoEnrichOnImport` setting, because that setting is currently not wired.
+
+## 3. CSV Parsing
+
+`src/core/universal-csv-parser.ts` does the heavy lifting.
+
+Implemented behavior:
+
+- Delimiter detection:
+  chooses between `;`, `,`, tab, and `|` using the first line.
+- Quote-aware parsing:
+  supports escaped quotes and multiline fields.
+- Header normalization:
+  strips diacritics and punctuation before alias matching.
+- Alias mapping:
+  maps a fixed list of French/English header variants onto canonical fields.
+- Number parsing:
+  attempts to handle both European and US-style numeric formats.
+
+Current limits:
+
+- Not truly "any language":
+  the alias table is finite.
+- Not truly "any encoding":
+  the file reader hardcodes UTF-8.
+- Not truly "any delimiter":
+  only four delimiters are supported.
+
+## 4. Canonical Product Normalization
+
+`src/core/product-adapter.ts` converts raw parsed rows into the canonical `Product` shape from `src/core/schema.ts`.
+
+The adapter is responsible for:
+
+- Assigning product identity fields.
+- Building default nested sections:
+  `visual`, `technical`, `commercial`, `strategic`, `marketing`, `relationships`.
+- Recording first-party observations:
+  stock, purchase price, stock status, brand, barcode, MPN.
+- Running Zod validation through `ProductSchema.safeParse(...)`.
+- Stamping `_searchIndex` for fast search.
+
+Important implementation detail:
+
+- Many UI surfaces still rely on `ProductAdapter.toLegacy(product)` to flatten the canonical model into older display-ready fields.
+
+## 5. Rule-Based Enrichment
+
+`src/services/enrichment.ts` adds structure without calling external services.
+
+Implemented rules:
+
+- Brand detection from product name against `KNOWN_BRANDS`.
+- Category classification from regex patterns.
+- Basic spec extraction:
+  screen size, kg, litres, watts, HP/CV, BTU, dishwasher covers.
+- Curated DB overlay for hardcoded high-confidence product patterns.
+- Observation append + consensus recomputation.
+- Confidence score recomputation and sync into `identity.confidenceScore`.
+
+What it does not do:
+
+- It does not browse the web.
+- It does not use the LLM.
+- It does not validate whether inferred specs are commercially correct for a given model.
+
+## 6. Store, Filters, and Persistence
+
+`src/state/store.ts` is a small observable store.
+
+State responsibilities:
+
+- source product array
+- search query
+- active filters
+- import status and error
+- last mutation timestamp
+
+Persistence responsibilities:
+
+- `src/services/persistence.ts` uses IndexedDB first.
+- If IndexedDB fails, it falls back to `localStorage`.
+- Sales records are stored in a separate IndexedDB object store.
+
+Persistence behaviors worth knowing:
+
+- Full imports call `saveAll()` and clear the product store before rewriting it.
+- Single-product updates call `updateOne()`.
+- Delete and bulk price operations call `deleteMany()` / `putMany()`.
+- Backup import from settings writes to persistence only; it does not repopulate the live store until reload.
+
+## 7. Sales Import and Derived Analytics
+
+Sales use a separate CSV path in `src/services/sales.ts`.
+
+Implemented flow:
+
+1. User imports a sales CSV from the header button.
+2. `parseSalesCSV(text)` maps a smaller schema:
+   `sku`, `barcode`, `date`, `qty`, `unitPrice`, `channel`.
+3. `SalesService.addMany(...)` stores the rows in IndexedDB.
+4. Dashboard widgets recompute velocity, revenue, category performance, and forecast data.
+
+Derived services:
+
+- `velocity.ts`
+  sold 7/30/90d, velocity, days of cover, reorder signal.
+- `analytics.ts`
+  revenue, ABC/Pareto, daily series, KPI aggregates.
+- `forecast.ts`
+  revenue forecast and stockout ETA.
+- `insights.ts`
+  narrative insights assembled from the above caches.
+
+Important limitation:
+
+- Sales CSV parsing is simpler than inventory parsing and is not quote-aware.
+
+## 8. AI Enrichment Path
+
+There are two AI-related paths.
+
+Batch path:
+
+- `EnrichmentQueue.enqueueAll()` loads products into a serial queue.
+- `EnrichmentQueue.start()` processes one product at a time.
+- `LLMService.enrichProduct(product)` fetches search context via the Python sidecar or a DuckDuckGo HTML fallback.
+- `SchemaMapper.mergeIntoProduct(...)` merges the extracted JSON into the canonical product.
+- `inventoryStore.updateProduct(...)` writes the result back and persists it.
+
+Manual single-product path:
+
+- The "Enrichir avec l'IA" button in `ProductIntelligenceUI.tsx` also calls `LLMService.enrichProduct(product)`.
+- Unlike the queue path, it does not use `SchemaMapper`.
+- It writes a partial, older field shape into `knowledge`, `enrichment`, and `consensus`.
+
+This split is one of the most important current defects. See `ACTIVE_ISSUES.md`.
+
+## 9. LLM and Scraper Connectivity
+
+`vite.config.js` defines local proxies:
+
+- `/api/llm`
+  forwarded to the configured local LLM endpoint, rewritten to `/v1/chat/completions`.
+- `/api/ollama`
+  forwarded to local Ollama.
+- `/api/health`, `/api/search`, `/api/scrape`, `/api/enrich-product`, `/api/enrich`, `/api/proxy`
+  forwarded to the Python sidecar.
+
+Implemented scraper behavior:
+
+- The frontend assumes the sidecar already exists.
+- The frontend does not directly implement Firecrawl or provider switching.
+- If the sidecar is unavailable, the app degrades to smaller browser-side fallback behavior for search, but not all workflows remain equivalent.
+
+## 10. Dashboard Views
+
+`src/ui/features/dashboard/Dashboard.tsx` orchestrates the UI.
+
+Views:
+
+- `grid`
+  card-based catalog view
+- `table`
+  denser list/table
+- `tree`
+  hierarchical tree
+- `graph`
+  relationship graph
+- `compare`
+  side-by-side compare
+- `ecommerce`
+  CRM/ecommerce-oriented panel
+
+Other always-on modules:
+
+- KPI strip
+- sales KPI strip
+- insights feed
+- revenue chart
+- forecast panel
+- reorder radar
+- dead stock panel
+- category leaderboard
+
+## 11. Graph Mode
+
+There are two graph entry modes:
+
+- Dashboard graph tab:
+  projects the live product list into graph nodes via `src/services/graph-projection.ts`.
+- Standalone `graph.html`:
+  uses example datasets unless external data is injected.
+
+Renderer behavior:
+
+- SVG under the default threshold.
+- Canvas when node count exceeds the built-in threshold from `DEFAULT_RENDER_CONFIG.svgThreshold`.
+
+Documentation correction:
+
+- The graph system does switch renderer types.
+- The user-facing `graphLodThreshold` performance setting is not what controls that threshold today.

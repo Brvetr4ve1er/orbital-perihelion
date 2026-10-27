@@ -147,7 +147,7 @@ class SettingsStore {
 
     subscribe(fn: Listener): () => void {
         this.listeners.add(fn);
-        return () => this.listeners.delete(fn);
+        return () => { this.listeners.delete(fn); };
     }
 
     update<K extends keyof Settings>(section: K, patch: Partial<Settings[K]>) {

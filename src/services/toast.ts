@@ -21,9 +21,9 @@ class ToastStore {
     private toasts: Toast[] = [];
     private listeners = new Set<Listener>();
 
-    subscribe(fn: Listener) {
+    subscribe(fn: Listener): () => void {
         this.listeners.add(fn);
-        return () => this.listeners.delete(fn);
+        return () => { this.listeners.delete(fn); };
     }
     private notify() { this.listeners.forEach(l => l([...this.toasts])); }
 

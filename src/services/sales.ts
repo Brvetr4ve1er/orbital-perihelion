@@ -35,9 +35,9 @@ export const SalesService = {
 
     getCached(): SalesRecord[] { return cache; },
 
-    subscribe(l: Listener) {
+    subscribe(l: Listener): () => void {
         listeners.add(l);
-        return () => listeners.delete(l);
+        return () => { listeners.delete(l); };
     },
 
     async addMany(rows: Omit<SalesRecord, 'id'>[]): Promise<number> {
@@ -82,6 +82,32 @@ function detectDelimiter(text: string): string {
     return counts[0].n > 0 ? counts[0].d : ',';
 }
 
+/** RFC-4180-ish row tokenizer — handles quoted fields with embedded delimiters,
+ *  doubled-quote escapes, and CRLF line endings inside quotes. */
+function tokenizeCSV(text: string, delim: string): string[][] {
+    const rows: string[][] = [];
+    let row: string[] = [];
+    let field = '';
+    let inQuotes = false;
+    for (let i = 0; i < text.length; i++) {
+        const ch = text[i];
+        if (inQuotes) {
+            if (ch === '"') {
+                if (text[i + 1] === '"') { field += '"'; i++; }
+                else inQuotes = false;
+            } else field += ch;
+            continue;
+        }
+        if (ch === '"') { inQuotes = true; continue; }
+        if (ch === delim) { row.push(field); field = ''; continue; }
+        if (ch === '\r') continue;
+        if (ch === '\n') { row.push(field); rows.push(row); row = []; field = ''; continue; }
+        field += ch;
+    }
+    if (field.length > 0 || row.length > 0) { row.push(field); rows.push(row); }
+    return rows.filter(r => r.some(c => c.trim().length > 0));
+}
+
 function normalizeHeader(h: string): string {
     return h.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
 }
@@ -89,10 +115,10 @@ function normalizeHeader(h: string): string {
 export function parseSalesCSV(text: string): { rows: Omit<SalesRecord, 'id'>[]; diagnostic: string } {
     if (!text || !text.trim()) return { rows: [], diagnostic: 'Empty file' };
     const delim = detectDelimiter(text);
-    const lines = text.split(/\r?\n/).filter(l => l.trim().length > 0);
-    if (lines.length < 2) return { rows: [], diagnostic: 'No data rows' };
+    const records = tokenizeCSV(text, delim);
+    if (records.length < 2) return { rows: [], diagnostic: 'No data rows' };
 
-    const headers = lines[0].split(delim).map(normalizeHeader);
+    const headers = records[0].map(normalizeHeader);
     const pick = (key: keyof SalesRecord): number => {
         for (const alias of COL_ALIASES[key]) {
             const idx = headers.indexOf(alias);
@@ -113,8 +139,8 @@ export function parseSalesCSV(text: string): { rows: Omit<SalesRecord, 'id'>[]; 
     }
 
     const rows: Omit<SalesRecord, 'id'>[] = [];
-    for (let i = 1; i < lines.length; i++) {
-        const parts = lines[i].split(delim);
+    for (let i = 1; i < records.length; i++) {
+        const parts = records[i];
         const sku = (parts[iSku] || '').trim().toLowerCase();
         const qty = parseFloat((parts[iQty] || '').replace(/[^\d.-]/g, ''));
         if (!sku || !Number.isFinite(qty) || qty <= 0) continue;
@@ -129,6 +155,6 @@ export function parseSalesCSV(text: string): { rows: Omit<SalesRecord, 'id'>[]; 
     }
     return {
         rows,
-        diagnostic: `Delimiter "${delim}" · ${rows.length}/${lines.length - 1} rows mapped via columns: ${headers.join(', ')}`,
+        diagnostic: `Delimiter "${delim}" · ${rows.length}/${records.length - 1} rows mapped via columns: ${headers.join(', ')}`,
     };
 }

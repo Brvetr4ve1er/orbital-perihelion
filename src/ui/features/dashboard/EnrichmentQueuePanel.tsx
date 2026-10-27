@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { EnrichmentQueue, QueueState } from '../../../services/enrichment-queue';
 
 export const EnrichmentQueuePanel = () => {
@@ -70,20 +70,7 @@ export const EnrichmentQueuePanel = () => {
             {isOpen && (
                 <div
                     id="enrichment-queue-panel"
-                    style={{
-                        position: 'fixed',
-                        bottom: '24px',
-                        right: '24px',
-                        width: '340px',
-                        background: 'rgba(15, 15, 25, 0.97)',
-                        border: '1px solid rgba(99, 102, 241, 0.3)',
-                        borderRadius: '16px',
-                        padding: '20px',
-                        backdropFilter: 'blur(20px)',
-                        boxShadow: '0 16px 48px rgba(0,0,0,0.6)',
-                        zIndex: 999,
-                        color: '#fff',
-                    }}
+                    className="enrichment-queue-panel"
                 >
                     {/* Header */}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>

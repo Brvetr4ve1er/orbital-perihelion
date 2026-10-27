@@ -14,7 +14,7 @@ interface UseSearchOptions {
 export function useSearch({ applyFilter, clearFilter }: UseSearchOptions) {
   const [query, setQuery] = useState('');
   const [activeGroups, setActiveGroups] = useState<Set<NodeGroup>>(new Set());
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const _applySearch = useCallback((q: string, groups: Set<NodeGroup>) => {
     const hasQuery = q.trim().length > 0;

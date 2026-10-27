@@ -2,7 +2,7 @@
  * SalesKPIStrip — KPIs dérivés des ventes (CA 30j, panier moyen, top vendeur, tendance).
  * Ne s'affiche pas tant qu'il n'y a pas de données de vente.
  */
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Product } from '../../core/schema';
 import { getSalesKPIs, invalidateAnalyticsCache } from '../../services/analytics';
 import { SalesService } from '../../services/sales';

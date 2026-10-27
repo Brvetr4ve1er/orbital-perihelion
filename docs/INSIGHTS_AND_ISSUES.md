@@ -1,31 +1,86 @@
-# Insights and Issues
+# Assessment Notes
 
-Following the stabilization of the React/TS architecture, the focus shifts from architectural debt to performance scaling and intelligence accuracy.
+This section is not a duplicate bug tracker. It captures broader engineering observations about the application after reading the codebase.
 
-## Current Intelligence Insights
+## What The Codebase Gets Right
 
-### 1. The "Canonical Product Object" (CPO) Success
-The move to a fact-level observation architecture has significantly hardened data integrity. By tracking multiple sources for the same field (e.g., `brand` from CSV vs `brand` from Regex), we can now compute a consensus score that alerts the user when data is "fuzzy" or contradictory.
+### 1. Clear client-side architecture
 
-### 2. Universal Parsing Robustness
-The fuzzy header mapper in `UniversalCSVParser` has successfully handled every inventory sample provided to date (including those with mixed French/English headers). 
+The repo is not random glue code. It has recognizable layers:
 
----
+- `core`
+  parsing, schema, search, validation
+- `services`
+  persistence, enrichment, analytics, external integrations
+- `state`
+  one observable store
+- `ui`
+  dashboard composition and feature surfaces
+- `graph`
+  a largely self-contained visualization subsystem
 
-## Future Scaling Challenges
+That separation makes the app understandable and gives future maintainers obvious places to work.
 
-### 1. IndexedDB Performance at Scale
-While IndexedDB is fast, a catalog exceeding 50,000 products with full enrichment metadata (observations, consensus logs) will eventually hit query latency issues.
-- **Mitigation**: Implement a secondary search index (e.g., MiniSearch or FlexSearch) that lives in a separate Web Worker.
+### 2. Canonical model first, UI second
 
-### 2. LLM Batch Enrichment Latency
-The single-queue enrichment model (one product at a time) is safe for local LLMs (preventing VRAM overflow) but slow for massive imports.
-- **Optimization**: Implement "Batch Tiers". High-value brands get priority LLM enrichment, while others use rule-based regex fallback until the system is idle.
+The best design decision in the project is the canonical `Product` shape plus `observations` and `consensus`. Even though some UI paths still flatten back to legacy shapes, the import and queue-based enrichment flows already converge on a single data model.
 
-### 3. Data Persistence Reliability
-Currently, the system relies entirely on the browser's local storage/IndexedDB. 
-- **Recommendation**: Add a "Cold Storage" export feature that dumps the entire CPO state into a compressed JSON file for backup and portability between machines.
+### 3. Build health is acceptable
 
-### 4. LLM Extraction Accuracy
-Small LLMs (4B-8B parameters) sometimes struggle with the strict JSON formatting required for specification extraction.
-- **Refinement**: Implement a "Retry with System Correction" loop where validation errors are fed back to the LLM to self-correct the response.
+The app currently builds successfully with `npm run build`. The most immediate risks are data correctness and feature drift, not broken compilation.
+
+## Where The Codebase Is Fragile
+
+### 1. Product truth is split across multiple representations
+
+The app carries at least four active forms of product data:
+
+- canonical product fields
+- observations
+- consensus
+- legacy flattened projections from `ProductAdapter.toLegacy(...)`
+
+This is workable, but only if every write path is disciplined. The queue path mostly is; the manual modal enrichment path is not.
+
+### 2. UI surface area has outgrown the wiring underneath it
+
+The dashboard has many views and many settings. Several of those controls are presentational or aspirational rather than implemented. That makes the product feel richer than it is, but it also increases support cost because users and future agents will trust controls that do nothing.
+
+### 3. Caching strategy is inconsistent
+
+Velocity and forecast are explicitly invalidated on product mutation. Analytics is not. That is a classic sign of local optimizations added over time without one unified invalidation policy.
+
+### 4. Documentation previously described intent, not reality
+
+Earlier docs repeatedly described:
+
+- universal parsing
+- gigabyte-scale browser storage
+- fully wired scraping providers
+- dynamic graph LOD settings
+
+The implemented code does not support those statements in full. That mismatch is now a material maintenance problem, because any future contributor reading the old docs would form the wrong mental model before opening the code.
+
+## Main Operational Risks
+
+### 1. CSV correctness risk
+
+Inventory import is relatively hardened. Sales import is not. Since reorder and forecast features depend on sales, weak parsing there can quietly poison downstream analytics.
+
+### 2. AI merge correctness risk
+
+The AI path is operationally useful, but only the queue path is reasonably canonical. The manual enrichment button is the most obvious data integrity hotspot in the repo.
+
+### 3. Configuration trust risk
+
+The settings panel currently overpromises. For operators, false configurability is worse than a missing setting because it suggests control where none exists.
+
+## Practical Direction
+
+If the project continues, the highest-value sequence is:
+
+1. Unify all AI writes through `SchemaMapper`.
+2. Fix sales CSV parsing and analytics invalidation.
+3. Remove or wire dead settings.
+4. Add a small test suite around parser fixtures and schema merges.
+5. Reduce dependence on legacy flattening helpers over time.

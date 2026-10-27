@@ -1,4 +1,3 @@
-import React from 'react';
 import { inventoryStore } from '../../state/store';
 
 interface KPIProps {

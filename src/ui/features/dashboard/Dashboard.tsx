@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useMemo, useCallback, lazy, Suspense, useDeferredValue } from 'react';
+import AOS from 'aos';
 import { inventoryStore } from '../../../state/store';
 import { Engine } from '../../../core/engine';
 import { KPIStrip } from '../../components/KPIStrip';
 import { FilterBar, SortMode } from '../../components/FilterBar';
-import { ProductCard } from '../../components/ProductCard';
 import { VirtualizedGrid } from './VirtualizedGrid';
 import { ProductIntelligenceUI } from './ProductIntelligenceUI';
 import { ErrorBoundary } from '../../components/ErrorBoundary';
@@ -35,30 +35,23 @@ const ViewFallback = () => (
 
 type ViewMode = 'grid' | 'tree' | 'graph' | 'table' | 'compare' | 'ecommerce';
 
-// Grouped view tabs: Vues principales / Outils avancés / Modules
-const VIEW_GROUPS: { label: string; tabs: { id: ViewMode; label: string }[] }[] = [
-    {
-        label: 'Vues',
-        tabs: [
-            { id: 'grid',    label: 'Grille' },
-            { id: 'table',   label: 'Tableau' },
-        ],
-    },
-    {
-        label: 'Outils',
-        tabs: [
-            { id: 'tree',    label: 'Arborescence' },
-            { id: 'graph',   label: 'Graphe' },
-            { id: 'compare', label: 'Comparer' },
-        ],
-    },
-    {
-        label: 'Modules',
-        tabs: [
-            { id: 'ecommerce', label: 'CRM' },
-        ],
-    },
+// Primary tabs always visible — the two views non-technical users actually need.
+const PRIMARY_VIEWS: { id: ViewMode; label: string }[] = [
+    { id: 'grid',  label: 'Grille' },
+    { id: 'table', label: 'Tableau' },
 ];
+
+// Advanced views — collapsed under "Plus de vues" so newcomers aren't overwhelmed.
+const ADVANCED_VIEWS: { id: ViewMode; label: string; hint: string }[] = [
+    { id: 'compare',   label: 'Comparer',     hint: 'Produits côte à côte' },
+    { id: 'tree',      label: 'Arborescence', hint: 'Hiérarchie par catégorie' },
+    { id: 'graph',     label: 'Graphe',       hint: 'Réseau de relations' },
+    { id: 'ecommerce', label: 'CRM',          hint: 'Clients & commandes' },
+];
+
+const ADVANCED_VIEW_LABEL: Record<string, string> = ADVANCED_VIEWS.reduce(
+    (acc, v) => { acc[v.id] = v.label; return acc; }, {} as Record<string, string>
+);
 
 const MAX_COMPARE = 4;
 
@@ -79,7 +72,9 @@ export const Dashboard = () => {
                 return fresh ?? prev;
             });
         });
-        return () => { unsub(); };
+        // Discover AOS-tagged elements on mount so reveal animations register.
+        const refreshId = window.setTimeout(() => AOS.refreshHard(), 60);
+        return () => { unsub(); window.clearTimeout(refreshId); };
     }, []);
 
     const deferredSearch = useDeferredValue(state.searchQuery);
@@ -163,43 +158,55 @@ export const Dashboard = () => {
 
     return (
         <div className="dashboard">
-            <ErrorBoundary>
-                {stats && <KPIStrip stats={stats} />}
-            </ErrorBoundary>
+            <div data-tour-id="kpis" data-aos-ready>
+                <ErrorBoundary>
+                    {stats && <KPIStrip stats={stats} />}
+                </ErrorBoundary>
+            </div>
 
-            <ErrorBoundary>
-                <SalesKPIStrip products={state.products} />
-            </ErrorBoundary>
+            <div data-aos="fade-up" data-aos-delay="80">
+                <ErrorBoundary>
+                    <SalesKPIStrip products={state.products} />
+                </ErrorBoundary>
+            </div>
 
-            <ErrorBoundary>
-                <InsightsFeed products={state.products} onPickProduct={setSelectedProduct} />
-            </ErrorBoundary>
+            <div data-aos="fade-up" data-aos-delay="120">
+                <ErrorBoundary>
+                    <InsightsFeed products={state.products} onPickProduct={setSelectedProduct} />
+                </ErrorBoundary>
+            </div>
 
-            <ErrorBoundary>
-                <RevenueChart products={state.products} />
-            </ErrorBoundary>
+            <div data-aos="fade-up" data-aos-delay="160">
+                <ErrorBoundary>
+                    <RevenueChart products={state.products} />
+                </ErrorBoundary>
+            </div>
 
-            <ErrorBoundary>
-                <ForecastPanel products={state.products} onPickProduct={setSelectedProduct} />
-            </ErrorBoundary>
+            <div data-aos="fade-up" data-aos-delay="200">
+                <ErrorBoundary>
+                    <ForecastPanel products={state.products} onPickProduct={setSelectedProduct} />
+                </ErrorBoundary>
+            </div>
 
-            <div className="intel-panels intel-panels-3">
+            <div className="intel-panels intel-panels-3" data-aos="fade-up" data-aos-delay="240">
                 <ErrorBoundary><ReorderRadar products={state.products} onPickProduct={setSelectedProduct} /></ErrorBoundary>
                 <ErrorBoundary><DeadStock products={state.products} onPickProduct={setSelectedProduct} /></ErrorBoundary>
                 <ErrorBoundary><CategoryLeaderboard products={state.products} /></ErrorBoundary>
             </div>
 
-            <FilterBar
-                searchQuery={state.searchQuery}
-                setSearchQuery={(q) => inventoryStore.setSearchQuery(q)}
-                activeFilters={state.activeFilters}
-                setFilters={(f) => inventoryStore.setFilters(f)}
-                stats={stats}
-                sortBy={sortBy}
-                setSortBy={setSortBy}
-            />
+            <div data-tour-id="filters">
+                <FilterBar
+                    searchQuery={state.searchQuery}
+                    setSearchQuery={(q) => inventoryStore.setSearchQuery(q)}
+                    activeFilters={state.activeFilters}
+                    setFilters={(f) => inventoryStore.setFilters(f)}
+                    stats={stats}
+                    sortBy={sortBy}
+                    setSortBy={setSortBy}
+                />
+            </div>
 
-            <div className="view-switcher">
+            <div className="view-switcher" data-tour-id="views">
                 <div className="results-count">
                     <strong>{filteredProducts.length}</strong> produit{filteredProducts.length !== 1 ? 's' : ''}
                     {state.products.length !== filteredProducts.length && (
@@ -209,24 +216,31 @@ export const Dashboard = () => {
                         <span className="compare-indicator"> · {compareIds.length} à comparer</span>
                     )}
                 </div>
-                <div className="view-tabs-grouped">
-                    {VIEW_GROUPS.map(group => (
-                        <div key={group.label} className="view-tab-group">
-                            <span className="view-tab-group-label">{group.label}</span>
-                            {group.tabs.map(tab => (
-                                <button
-                                    key={tab.id}
-                                    className={`view-tab ${view === tab.id ? 'active' : ''}`}
-                                    onClick={() => setView(tab.id)}
-                                >
-                                    <span className="view-tab-label">{tab.label}</span>
-                                    {tab.id === 'compare' && compareIds.length > 0 && (
-                                        <span className="view-tab-badge">{compareIds.length}</span>
-                                    )}
-                                </button>
-                            ))}
-                        </div>
+                <div className="view-tabs-simple">
+                    {PRIMARY_VIEWS.map(tab => (
+                        <button
+                            key={tab.id}
+                            className={`view-tab ${view === tab.id ? 'active' : ''}`}
+                            onClick={() => setView(tab.id)}
+                        >
+                            <span className="view-tab-label">{tab.label}</span>
+                        </button>
                     ))}
+                    {compareIds.length > 0 && (
+                        <button
+                            className={`view-tab ${view === 'compare' ? 'active' : ''}`}
+                            onClick={() => setView('compare')}
+                            title="Voir les produits sélectionnés côte à côte"
+                        >
+                            <span className="view-tab-label">Comparer</span>
+                            <span className="view-tab-badge">{compareIds.length}</span>
+                        </button>
+                    )}
+                    <ViewMoreMenu
+                        currentView={view}
+                        onPick={setView}
+                        compareCount={compareIds.length}
+                    />
                 </div>
             </div>
 
@@ -292,6 +306,72 @@ export const Dashboard = () => {
                         <button className="modal-close" onClick={() => setSelectedProduct(null)}>✕</button>
                         <ProductIntelligenceUI product={selectedProduct} />
                     </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// "Plus de vues" dropdown — keeps niche views (Tree, Graph, CRM) accessible
+// without overwhelming first-time users.
+// ─────────────────────────────────────────────────────────────────────────────
+interface ViewMoreMenuProps {
+    currentView: ViewMode;
+    onPick: (v: ViewMode) => void;
+    compareCount: number;
+}
+
+const ViewMoreMenu = ({ currentView, onPick, compareCount }: ViewMoreMenuProps) => {
+    const [open, setOpen] = useState(false);
+    const wrapRef = React.useRef<HTMLDivElement>(null);
+
+    // Close on outside click
+    useEffect(() => {
+        if (!open) return;
+        const onDoc = (e: MouseEvent) => {
+            if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+        };
+        document.addEventListener('mousedown', onDoc);
+        return () => document.removeEventListener('mousedown', onDoc);
+    }, [open]);
+
+    const advancedActive = ADVANCED_VIEWS.some(v => v.id === currentView) && currentView !== 'compare';
+    const buttonLabel = advancedActive
+        ? ADVANCED_VIEW_LABEL[currentView]
+        : 'Plus de vues';
+
+    return (
+        <div className="view-more-wrapper" ref={wrapRef}>
+            <button
+                className={`view-more-btn ${advancedActive ? 'has-active' : ''}`}
+                onClick={() => setOpen(o => !o)}
+                aria-expanded={open}
+                aria-haspopup="true"
+                title="Vues supplémentaires"
+            >
+                <span>{buttonLabel}</span>
+                <span className="view-more-caret">▾</span>
+            </button>
+            {open && (
+                <div className="view-more-menu" role="menu">
+                    {ADVANCED_VIEWS.map(v => {
+                        const disabled = v.id === 'compare' && compareCount === 0;
+                        return (
+                            <button
+                                key={v.id}
+                                className={`view-more-item ${currentView === v.id ? 'active' : ''}`}
+                                onClick={() => { if (!disabled) { onPick(v.id); setOpen(false); } }}
+                                disabled={disabled}
+                                style={disabled ? { opacity: 0.45, cursor: 'not-allowed' } : undefined}
+                                title={disabled ? 'Sélectionnez d\'abord des produits à comparer' : v.hint}
+                                role="menuitem"
+                            >
+                                <span>{v.label}</span>
+                                <span className="view-more-item-hint">{v.hint}</span>
+                            </button>
+                        );
+                    })}
                 </div>
             )}
         </div>

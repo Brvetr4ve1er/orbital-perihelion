@@ -5,7 +5,7 @@
  * a card that carries a productId opens the detail modal via onPickProduct;
  * a card with only a category narrows the global category filter.
  */
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Product } from '../../core/schema';
 import { computeInsights, Insight } from '../../services/insights';
 import { SalesService } from '../../services/sales';

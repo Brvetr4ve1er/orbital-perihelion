@@ -15,7 +15,6 @@ import type {
 } from '../types';
 import {
   GROUP_COLORS,
-  GROUP_GLOW,
   DEFAULT_RENDER_CONFIG,
 } from '../types';
 
@@ -285,7 +284,7 @@ export class SVGRenderer {
   }
 
   /** Fast position-only update — called on every simulation tick */
-  updatePositions(nodes: GraphNode[], links: GraphLink[]) {
+  updatePositions(_nodes: GraphNode[], _links: GraphLink[]) {
     if (this.cachedNodeSel) {
       this.cachedNodeSel
         .attr('cx', (d) => d.x ?? 0)
@@ -391,7 +390,7 @@ export class SVGRenderer {
   }
 
   private _updateLOD(k: number) {
-    const { lodFar, lodMid, lodClose } = this.cfg;
+    const { lodFar } = this.cfg;
     // Opacity based on zoom for smooth fading
     this.nodeLayer.attr('opacity', k < lodFar ? 0.7 : 1);
   }

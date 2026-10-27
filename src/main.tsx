@@ -3,9 +3,9 @@ import { createRoot } from 'react-dom/client';
 import AOS from 'aos';
 import 'aos/dist/aos.css';
 import { App } from './ui/App';
-import './index.css';
-import './ui/styles/shopify-ux.css';
-import './graph/graph.css';
+import './ui/styles/base.css';
+import './ui/styles/admin-shell.css';
+import './ui/styles/graph.css';
 
 AOS.init({
     duration: 420,

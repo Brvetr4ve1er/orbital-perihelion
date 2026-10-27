@@ -18,12 +18,11 @@ export default defineConfig(({ mode }) => {
                 },
                 output: {
                     manualChunks: {
-                        react:       ['react', 'react-dom'],
-                        d3:          ['d3', 'd3-color', 'd3-force', 'd3-scale', 'd3-selection', 'd3-zoom'],
-                        framer:      ['framer-motion'],
-                        tanstack:    ['@tanstack/react-virtual'],
-                        zod:         ['zod'],
-                        idb:         ['idb'],
+                        d3:       ['d3', 'd3-force', 'd3-selection', 'd3-zoom'],
+                        framer:   ['framer-motion'],
+                        tanstack: ['@tanstack/react-virtual'],
+                        zod:      ['zod'],
+                        idb:      ['idb'],
                     },
                 },
             },

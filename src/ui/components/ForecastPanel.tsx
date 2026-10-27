@@ -7,7 +7,7 @@
  *
  * Pure SVG; no chart library. Returns null until sales exist.
  */
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Product } from '../../core/schema';
 import { SalesService } from '../../services/sales';
 import { getRevenueTimeSeries } from '../../services/analytics';

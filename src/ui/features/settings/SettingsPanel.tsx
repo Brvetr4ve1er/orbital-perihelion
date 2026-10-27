@@ -21,6 +21,20 @@ const TABS: { id: TabId; label: string; icon: string }[] = [
     { id: 'backup', label: 'Backup', icon: '💾' },
 ];
 
+const CARD_LAYOUT_FIELDS: Array<{
+    key: keyof ReturnType<typeof useSettings>['cardLayout'];
+    label: string;
+    description: string;
+}> = [
+    { key: 'showImage', label: 'Image produit', description: 'Affiche l’image principale dans les cartes et le panneau produit.' },
+    { key: 'showPrice', label: 'Prix', description: 'Affiche le prix de vente dans les cartes et le détail produit.' },
+    { key: 'showStock', label: 'Stock', description: 'Affiche la quantité, la jauge de stock et les signaux de couverture.' },
+    { key: 'showSpecs', label: 'Spécifications', description: 'Affiche les specs rapides dans les cartes et la fiche produit.' },
+    { key: 'showMarketIntel', label: 'Marché', description: 'Affiche la concurrence, les écarts de prix et les sources trouvées.' },
+    { key: 'showMarketing', label: 'Marketing', description: 'Affiche la description marketing et le contenu SEO.' },
+    { key: 'showAIVerdict', label: 'Verdict IA', description: 'Affiche pros, cons, buyer fit et badges d’enrichissement.' },
+];
+
 export const SettingsPanel: React.FC<Props> = ({ open, onClose }) => {
     const settings = useSettings();
     const [tab, setTab] = useState<TabId>('theme');
@@ -71,8 +85,44 @@ export const SettingsPanel: React.FC<Props> = ({ open, onClose }) => {
         setImportMsg('All data cleared. Reload the page.');
     };
 
+    const applyCardPreset = (preset: 'focused' | 'balanced' | 'dense') => {
+        if (preset === 'focused') {
+            settingsStore.update('cardLayout', {
+                showImage: true,
+                showPrice: true,
+                showStock: true,
+                showSpecs: false,
+                showMarketIntel: false,
+                showMarketing: false,
+                showAIVerdict: false,
+            });
+            return;
+        }
+        if (preset === 'dense') {
+            settingsStore.update('cardLayout', {
+                showImage: false,
+                showPrice: true,
+                showStock: true,
+                showSpecs: true,
+                showMarketIntel: true,
+                showMarketing: false,
+                showAIVerdict: true,
+            });
+            return;
+        }
+        settingsStore.update('cardLayout', {
+            showImage: true,
+            showPrice: true,
+            showStock: true,
+            showSpecs: true,
+            showMarketIntel: true,
+            showMarketing: true,
+            showAIVerdict: true,
+        });
+    };
+
     return (
-        <div className="modal-overlay" onClick={onClose} style={{ zIndex: 1100 }}>
+        <div className="modal-overlay modal-overlay--safe" onClick={onClose} style={{ zIndex: 1100 }}>
             <div className="settings-modal" onClick={e => e.stopPropagation()}>
                 <header className="settings-header">
                     <h2>⚙️ Settings</h2>
@@ -258,15 +308,33 @@ export const SettingsPanel: React.FC<Props> = ({ open, onClose }) => {
 
                         {tab === 'card' && (
                             <div className="settings-section">
-                                <h3>Product Card Sections</h3>
-                                {(Object.keys(settings.cardLayout) as (keyof typeof settings.cardLayout)[]).map(k => (
-                                    <Toggle
-                                        key={k}
-                                        label={k.replace(/^show/, '').replace(/([A-Z])/g, ' $1').trim()}
-                                        checked={settings.cardLayout[k]}
-                                        onChange={v => settingsStore.update('cardLayout', { [k]: v } as any)}
-                                    />
-                                ))}
+                                <h3>Personnalisation des cartes produit</h3>
+                                <p className="settings-help">
+                                    Ces options contrôlent ce que les cartes produit et la fiche produit affichent vraiment.
+                                    Utilisez un preset si vous voulez un résultat rapide, puis affinez chaque bloc.
+                                </p>
+                                <div className="settings-actions settings-actions--presets">
+                                    <button className="btn-secondary" onClick={() => applyCardPreset('focused')}>Vue focalisée</button>
+                                    <button className="btn-secondary" onClick={() => applyCardPreset('balanced')}>Vue équilibrée</button>
+                                    <button className="btn-secondary" onClick={() => applyCardPreset('dense')}>Vue dense</button>
+                                </div>
+                                <div className="settings-card-grid">
+                                    {CARD_LAYOUT_FIELDS.map(field => (
+                                        <label key={field.key} className="settings-card-toggle">
+                                            <div className="settings-card-toggle-main">
+                                                <div>
+                                                    <div className="settings-card-toggle-label">{field.label}</div>
+                                                    <div className="settings-card-toggle-desc">{field.description}</div>
+                                                </div>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={settings.cardLayout[field.key]}
+                                                    onChange={e => settingsStore.update('cardLayout', { [field.key]: e.target.checked } as any)}
+                                                />
+                                            </div>
+                                        </label>
+                                    ))}
+                                </div>
                             </div>
                         )}
 

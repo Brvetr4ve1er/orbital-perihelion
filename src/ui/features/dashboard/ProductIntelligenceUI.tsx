@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Product } from '../../../core/schema';
 import { ProductAdapter } from '../../../core/product-adapter';
 import { LLMService } from '../../../services/llm';
@@ -106,8 +106,8 @@ export const ProductIntelligenceUI = ({ product }: { product: Product }) => {
             
             // Map the LLM JSON into the product schema
             const updated = { ...product };
-            updated.knowledge = updated.knowledge || {};
-            updated.knowledge.insights = result.ai_insights || {};
+            const insights = result.ai_insights || { pros: [], cons: [], fit: '' };
+            updated.knowledge = { ...(updated.knowledge ?? {}), insights };
             
             updated.enrichment = updated.enrichment || {};
             if (result.competitorPrices) {
@@ -143,21 +143,21 @@ export const ProductIntelligenceUI = ({ product }: { product: Product }) => {
     const heroImage = product.visual?.heroImage || (product.enrichment?.images && product.enrichment.images[0]);
 
     return (
-        <div className="tambo-adaptive-container" style={{ color: '#fff' }}>
+        <div className="tambo-adaptive-container product-intel-panel" style={{ color: '#fff' }}>
             
             {/* Header / Actions */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                <h2 style={{ fontSize: '1.2rem', margin: 0 }}>{lp.name}</h2>
-                <div style={{ display: 'flex', gap: '8px' }}>
+            <div className="product-intel-header">
+                <h2 className="product-intel-title">{lp.name}</h2>
+                <div className="product-intel-actions">
                     <button 
                         onClick={() => setIsEditing(true)}
-                        style={{ background: 'transparent', color: '#fff', border: '1px solid rgba(255,255,255,0.2)', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', fontWeight: 600 }}>
+                        className="product-intel-btn product-intel-btn-secondary">
                         ✏️ Éditer (CRUD)
                     </button>
                     <button 
                         onClick={handleEnrich} 
                         disabled={isEnriching}
-                        style={{ background: '#7c4dff', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '8px', cursor: isEnriching ? 'not-allowed' : 'pointer', fontWeight: 600, opacity: isEnriching ? 0.7 : 1 }}>
+                        className="product-intel-btn product-intel-btn-primary">
                         {isEnriching ? '⏳ Analyse en cours...' : '🔍 Enrichir avec l\'IA'}
                     </button>
                 </div>
@@ -216,7 +216,7 @@ export const ProductIntelligenceUI = ({ product }: { product: Product }) => {
             {/* Commercial Info */}
             <div className="modal-section" style={{ marginBottom: '24px' }}>
                 <div className="modal-section-title">💰 Information Commerciale</div>
-                <div className="commercial-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div className="commercial-grid product-intel-commercial-grid" style={{ display: 'grid', gap: '12px' }}>
                     {cardLayout.showPrice && (
                         <div className="comm-card" style={{ padding: '16px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
                             <div className="comm-label">Prix Détail</div>
@@ -252,7 +252,12 @@ export const ProductIntelligenceUI = ({ product }: { product: Product }) => {
                     <InsightsBlock
                         pros={enrichment.pros || []}
                         cons={enrichment.cons || []}
-                        buyerFit={enrichment.fit || enrichment.verdict || 'Analyse en attente...'}
+                        buyerFit={
+                            ('fit' in enrichment && enrichment.fit) ||
+                            ('buyerFit' in enrichment && enrichment.buyerFit) ||
+                            ('marketVerdict' in enrichment && enrichment.marketVerdict) ||
+                            'Analyse en attente...'
+                        }
                     />
                 </div>
             )}

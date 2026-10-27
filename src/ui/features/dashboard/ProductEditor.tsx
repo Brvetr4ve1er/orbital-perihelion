@@ -140,7 +140,7 @@ export const ProductEditor = ({ product, onClose }: ProductEditorProps) => {
                 </div>
             )}
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+            <div className="product-editor-grid">
                 {/* Identity */}
                 <div style={{ background: 'rgba(255,255,255,0.03)', padding: '16px', borderRadius: '12px' }}>
                     <h3 style={{ fontSize: '0.9rem', color: '#9898a8', marginBottom: '16px', marginTop: 0 }}>Identité</h3>
@@ -200,7 +200,7 @@ export const ProductEditor = ({ product, onClose }: ProductEditorProps) => {
                 </div>
 
                 {/* Enrichment */}
-                <div style={{ gridColumn: 'span 2', background: 'rgba(255,255,255,0.03)', padding: '16px', borderRadius: '12px' }}>
+                <div className="product-editor-full" style={{ background: 'rgba(255,255,255,0.03)', padding: '16px', borderRadius: '12px' }}>
                     <h3 style={{ fontSize: '0.9rem', color: '#9898a8', marginBottom: '16px', marginTop: 0 }}>Enrichissement (Manuel)</h3>
 
                     <Field label="Description Marketing / SEO">

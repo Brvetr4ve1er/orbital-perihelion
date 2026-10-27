@@ -3,7 +3,7 @@
  * and a tiny inline bar showing share of total. Click a row to filter the
  * catalog down to that category.
  */
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Product } from '../../core/schema';
 import { getCategoryPerformance, invalidateAnalyticsCache } from '../../services/analytics';
 import { SalesService } from '../../services/sales';

@@ -2,7 +2,7 @@
  * Dead Stock — inverse of the Reorder Radar. Surfaces products with
  * stock on hand but no sales in 90 days. These are clearance candidates.
  */
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Product } from '../../core/schema';
 import { getDeadStock, invalidateVelocityCache } from '../../services/velocity';
 import { SalesService } from '../../services/sales';

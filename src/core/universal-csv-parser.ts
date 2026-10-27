@@ -108,27 +108,6 @@ function parseCsvLines(csvText: string, delimiter: string): string[][] {
     return rows.filter(r => r.some(f => f.trim() !== ''));
 }
 
-function parseRow(line: string, delimiter: string): string[] {
-    const values: string[] = [];
-    let current = '';
-    let inQuotes = false;
-    for (let i = 0; i < line.length; i++) {
-        const ch = line[i];
-        if (ch === '"') {
-            // Handle escaped quotes inside quoted fields
-            if (inQuotes && line[i + 1] === '"') { current += '"'; i++; }
-            else { inQuotes = !inQuotes; }
-        } else if (ch === delimiter && !inQuotes) {
-            values.push(current.trim());
-            current = '';
-        } else {
-            current += ch;
-        }
-    }
-    values.push(current.trim());
-    return values;
-}
-
 /**
  * Maps raw CSV headers to canonical field names.
  * Both the header and the variants are normalized with normalizeKey()

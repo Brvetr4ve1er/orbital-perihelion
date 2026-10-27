@@ -7,7 +7,7 @@
  *
  * At 5,000 products this renders ~20 cards instead of 5,000.
  */
-import React, { useRef, useCallback, useEffect, useState } from 'react';
+import { useRef, useCallback, useEffect, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { ProductCard } from '../../components/ProductCard';
 import { Product } from '../../../core/schema';

@@ -14,6 +14,8 @@ import { ShortcutsHelp } from './components/ShortcutsHelp';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { toasts } from '../services/toast';
+import { Welcome } from './components/Welcome';
+import { GuidedTour, resetTour } from './components/GuidedTour';
 import { generateSampleProducts, generateStressTestProducts } from '../services/sample-data';
 import { downloadCSV, downloadShopifyCSV, downloadJSON } from '../services/csv-export';
 import { EnrichmentQueue } from '../services/enrichment-queue';
@@ -29,7 +31,8 @@ export const App = () => {
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [paletteOpen, setPaletteOpen] = useState(false);
     const [shortcutsOpen, setShortcutsOpen] = useState(false);
-    const [focusedProduct, setFocusedProduct] = useState<Product | null>(null);
+    const [, setFocusedProduct] = useState<Product | null>(null);
+    const [tourForceOpen, setTourForceOpen] = useState(false);
     const searchInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
@@ -229,8 +232,10 @@ export const App = () => {
         { id: 'enrich-all', label: 'Enrich all products with AI', icon: '✨', section: 'actions', run: enrichAll },
         { id: 'clear-all', label: 'Clear entire catalog', icon: '🗑', section: 'actions', run: clearAll },
         { id: 'clear-sales', label: 'Clear sales history', icon: '🗑', section: 'actions', run: clearSales },
-        { id: 'settings', label: 'Open settings', icon: '⚙️', section: 'navigation', shortcut: '⌘,', run: () => setSettingsOpen(true) },
-        { id: 'shortcuts', label: 'Show keyboard shortcuts', icon: '⌨', section: 'navigation', shortcut: '?', run: () => setShortcutsOpen(true) },
+        { id: 'settings', label: 'Ouvrir les paramètres', icon: '⚙️', section: 'navigation', shortcut: '⌘,', run: () => setSettingsOpen(true) },
+        { id: 'shortcuts', label: 'Afficher les raccourcis clavier', icon: '⌨', section: 'navigation', shortcut: '?', run: () => setShortcutsOpen(true) },
+        { id: 'tour', label: 'Refaire la visite guidée', icon: '🧭', section: 'navigation', hint: 'Tour de l\'interface en 4 étapes',
+          run: () => { resetTour(); setTourForceOpen(true); } },
     ], [triggerImport, triggerSalesImport, loadSampleData, loadStressData, exportAll, exportShopify, exportJSON, enrichAll, clearAll, clearSales]);
 
     const onPickProduct = useCallback((p: Product) => {
@@ -264,7 +269,7 @@ export const App = () => {
                 <header className="header header-shopify">
                     <div className="header-inner">
                         <div className="header-zone header-left">
-                            <div className="logo">
+                            <div className="logo" title="Tableau de bord">
                                 <div className="logo-icon">⚡</div>
                                 <span className="logo-text">Shopifoo</span>
                             </div>
@@ -275,30 +280,32 @@ export const App = () => {
                                 className="global-search"
                                 onClick={() => setPaletteOpen(true)}
                                 aria-label="Search or run command"
+                                data-tour-id="search"
                             >
                                 <span className="gs-icon">
                                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                                 </span>
-                                <span className="gs-placeholder">Rechercher ou appuyer sur ⌘K</span>
+                                <span className="gs-placeholder">Rechercher un produit, une action…</span>
                                 <kbd className="gs-kbd">⌘K</kbd>
                             </button>
                         </div>
 
                         <div className="header-zone header-right">
-                            <LLMConnector />
                             {hasProducts && <EnrichmentQueuePanel />}
                             <button
                                 className="header-icon-btn"
                                 onClick={() => setShortcutsOpen(true)}
-                                title="Raccourcis clavier (?)"
+                                data-tip="Raccourcis clavier"
+                                aria-label="Raccourcis clavier"
                             >⌨</button>
                             <button
                                 className="header-icon-btn"
                                 onClick={() => setSettingsOpen(true)}
-                                title="Paramètres (⌘,)"
+                                data-tip="Paramètres"
+                                aria-label="Paramètres"
                             >⚙️</button>
-                            <label className="btn btn-ghost" title="Importer les ventes (CSV)">
-                                Ventes
+                            <label className="btn btn-ghost" title="Importer un fichier de ventes">
+                                <span aria-hidden>📊</span>&nbsp;Ventes
                                 <input
                                     id="sales-file-input"
                                     type="file"
@@ -308,7 +315,7 @@ export const App = () => {
                                 />
                             </label>
                             <label className={`btn btn-primary ${isLoading ? 'is-disabled' : ''}`}>
-                                {isLoading ? 'Importation…' : 'Importer CSV'}
+                                <span aria-hidden>📥</span>&nbsp;{isLoading ? 'Importation…' : 'Importer'}
                                 <input
                                     id="csv-file-input"
                                     type="file"
@@ -318,6 +325,9 @@ export const App = () => {
                                     onChange={handleFileUpload}
                                 />
                             </label>
+                            <div className="header-llm-quiet">
+                                <LLMConnector />
+                            </div>
                         </div>
                     </div>
                 </header>
@@ -342,17 +352,10 @@ export const App = () => {
                     )}
 
                     {!isLoading && !hasError && !hasProducts && (
-                        <div className="empty-state">
-                            <h2>Bienvenue sur Shopifoo</h2>
-                            <p>Importez votre catalogue pour commencer.</p>
-                            <div className="empty-actions">
-                                <button className="btn btn-primary btn-lg" onClick={triggerImport}>Importer un fichier CSV</button>
-                                <button className="btn btn-ghost btn-lg" onClick={loadSampleData}>Données de démonstration</button>
-                            </div>
-                            <p className="empty-hint">
-                                Tous les formats CSV sont supportés. Appuyez sur <kbd>⌘K</kbd> pour accéder aux commandes.
-                            </p>
-                        </div>
+                        <Welcome
+                            onTrySample={loadSampleData}
+                            onImportCSV={triggerImport}
+                        />
                     )}
 
                     {!isLoading && hasProducts && (
@@ -372,6 +375,11 @@ export const App = () => {
                     onPickProduct={onPickProduct}
                 />
                 <ShortcutsHelp open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
+                <GuidedTour
+                    eligible={hasProducts && !isLoading}
+                    forceOpen={tourForceOpen}
+                    onClose={() => setTourForceOpen(false)}
+                />
                 <Toaster />
                 <ConfirmHost />
             </div>

@@ -6,6 +6,28 @@
 
 ---
 
+## Session 2026-04-27 — Documentation Reality Pass
+
+### REFACTOR — Main docs rewritten from code, not roadmap language
+**Files:** `docs/README.md`, `docs/OVERVIEW.md`, `docs/FUNCTIONING.md`, `docs/ACTIVE_ISSUES.md`, `docs/INSIGHTS_AND_ISSUES.md`
+**Reason:** The previous top-level docs mixed historical intent, future-state claims, and partially outdated implementation notes. They repeatedly overstated parser universality, storage guarantees, graph configurability, and settings wiring.
+**Change:** Replaced the main docs set with a code-audited description of:
+- the actual runtime flow
+- the real data model
+- the split between rule-based enrichment and AI enrichment
+- known inactive settings
+- current bug register with file evidence and remediation suggestions
+
+### DECISION — Historical handoff notes kept as historical context
+**Files intentionally left untouched:** `docs/agent-handoff/*`, `docs/ALTERNATIVE.md`, `docs/FINAL_ADAPTIVE_PRODUCT_SCHEMA.md`
+**Reason:** These files still have value as planning or historical reference, but they are no longer treated as the source of truth for current behavior.
+
+### ADD — Module-by-module audit set
+**Files:** `docs/module-audits/README.md`, `docs/module-audits/01-core.md`, `docs/module-audits/02-state.md`, `docs/module-audits/03-services.md`, `docs/module-audits/04-ui.md`, `docs/module-audits/05-graph.md`, `docs/module-audits/06-scraper-sidecar.md`, `docs/module-audits/07-platform-and-build.md`
+**Reason:** The first documentation pass captured application-wide behavior and active issues. This second pass breaks the codebase down by module so future humans or agents can audit responsibilities, likely blind spots, and upgrade opportunities without re-deriving structure from the repo each time.
+
+---
+
 ## Session 2026-04-19 — Import Crash Fix (Zod v4 bug)
 
 ### FIX [CRITICAL] — "Cannot read properties of undefined (reading '_zod')" on CSV import

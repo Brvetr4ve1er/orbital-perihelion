@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { LLMService } from '../../services/llm';
 
 // ── Provider presets ──────────────────────────────────────────────────────────
@@ -91,7 +91,7 @@ export const LLMConnector = () => {
     const handleLoadPreset = (name: string) => {
         const p = LLMService.loadPreset(name);
         if (!p) return;
-        setConfig({ url: p.url, model: p.model, key: p.key });
+        setConfig(prev => ({ ...prev, url: p.url, model: p.model, key: p.key }));
         setProvider(inferProvider(p.url));
         setAvailableModels([]);
     };
@@ -147,16 +147,17 @@ export const LLMConnector = () => {
         }
     };
 
-    const statusColor = status === 'online' ? '#22c55e' : status === 'loading' ? '#eab308' : '#ef4444';
-    const statusLabel = status === 'online' ? 'IA Connectée' : status === 'loading' ? 'Connexion…' : 'IA Hors-ligne';
+    // Subtle palette — no alarming red for offline; AI is opt-in so absence is fine.
+    const statusColor = status === 'online' ? '#22c55e' : status === 'loading' ? '#eab308' : '#94a3b8';
+    const statusLabel = status === 'online' ? 'IA active' : status === 'loading' ? 'Connexion…' : 'IA désactivée';
 
     return (
         <>
             <div
-                className={`llm-status-badge ${status === 'online' ? 'status-online' : status === 'loading' ? 'status-loading' : 'status-offline'}`}
+                className={`llm-status-badge is-quiet ${status === 'online' ? 'status-online' : status === 'loading' ? 'status-loading' : 'status-offline'}`}
                 onClick={() => setIsOpen(true)}
-                style={{ cursor: 'pointer', border: `1px solid ${statusColor}66` }}
-                title="Configurer le modèle IA"
+                style={{ cursor: 'pointer' }}
+                title="Configurer l'IA (optionnel) — pour enrichir automatiquement vos produits"
             >
                 <span className="status-dot" style={{ background: statusColor }} />
                 <span className="status-text">{statusLabel}</span>

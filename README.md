@@ -1,87 +1,66 @@
-# ⚡ PKOS — Product Knowledge Operating System
+# PKOS — Product Knowledge Operating System
 
-> **Orbital Perihelion Edition**: A high-performance commercial intelligence engine for electronics inventory management and market positioning.
+> **Orbital Perihelion edition** — local commercial intelligence engine for inventory ingestion, enrichment, and analytics.
 
-PKOS is a state-of-the-art dashboard designed to transform raw inventory data into actionable commercial intelligence. By leveraging local LLMs, format-agnostic CSV parsing, and real-time market search, PKOS provides a comprehensive view of your product landscape.
-
----
-
-## 🚀 Key Features
-
-### 🧠 Intelligent Enrichment Engine
-*   **Local LLM Integration**: Connects to LM Studio via an OpenAI-compatible API to analyze products and extract competitor prices and specs.
-*   **Web Scraping**: Routes searches through a DuckDuckGo HTML proxy to feed real-time pricing and feature information into the context window.
-*   **Universal Ingestion**: Support for any CSV dialect, automatically matching French and English column headers to the canonical schema.
-
-### 📊 Commercial Intelligence
-*   **Margin Analysis**: Real-time margin calculation and profitability tracking from cost and retail prices.
-*   **Stock Health Tracking**: Normalization of CSV stock status columns directly onto the product cards.
-*   **AI Insights**: Auto-generated pros, cons, and buyer-fit profiles from the LLM based on scrape data.
-
-### 💨 High Performance UI
-*   **React 19 & TypeScript**: Strongly typed modern architecture.
-*   **Immutability**: Global state handled cleanly through an observable store.
-*   **Vite-Powered**: Ultra-fast HMR and optimized production builds.
+PKOS turns raw CSV exports into a richly-typed, queryable product catalog with margin analysis, stock-out forecasting, and AI-assisted enrichment.
 
 ---
 
-## 🛠️ Technology Stack
+## Quick Start
 
-- **Core Framework**: React 19, TypeScript
-- **State Management**: Zero-dependency observable store paradigm
-- **Styling**: Vanilla CSS (Glassmorphism & Custom Tokens)
-- **AI Backend**: LM Studio (Local LLM via `/api/llm`), Python Web Proxy (via `/api/proxy`)
-- **Build Tool**: Vite 7
-
----
-
-## 🏁 Getting Started
-
-### Prerequisites
-- Node.js (v18 or higher recommended)
-- LM Studio running locally with a model loaded (e.g. `deepseek-r1`) listening on port `1234`.
-- The PKOS Python Proxy server running locally on port `5001`.
-
-### Configuration
-Optionally configure your `.env`:
-```
-VITE_LLM_URL=/api/llm
-VITE_LLM_MODEL=deepseek/deepseek-r1-0528-qwen3-8b
+```bash
+npm install
+npm run dev          # http://127.0.0.1:5000
+npm run build        # outputs to dist/
+npm run typecheck    # tsc --noEmit
+npm run preview      # serve the production build
 ```
 
-### Installation
-1. Install the required dependencies:
-   ```powershell
-   npm install
-   ```
+### Optional sidecars
 
-2. Launch in development mode:
-   ```powershell
-   npm run dev
-   ```
+| Service          | Port  | Purpose                                                 |
+| ---------------- | ----- | ------------------------------------------------------- |
+| LM Studio        | 1234  | Local OpenAI-compatible LLM (proxied via `/api/llm`)    |
+| Python scraper   | 5001  | DDG / SearXNG search + scrape (proxied via `/api/*`)    |
 
-### Production Build
-To generate a production-ready bundle:
-```powershell
-npm run build
-```
+Drop files from `samples/` into the importer to try the pipeline without your own data.
 
 ---
 
-## 📂 Project Structure
+## Project Layout
 
 ```text
-orbital-perihelion/
-├── src/
-│   ├── core/           # Schema, Parsers, Engine, Validators
-│   ├── services/       # LLM integration, Rule-based enrichment, Curated DB
-│   ├── state/          # Global application store
-│   └── ui/             # React Component Tree
-├── docs/               # Architecture docs, handoff logs, issue tracker
-├── index.html          # Main application entry point
-├── vite.config.js      # Build & proxy configuration
+.
+├── index.html              # Main SPA entry
+├── graph.html              # Standalone graph view entry
+├── samples/                # Example CSVs for manual import
+├── scraper/                # Optional Python sidecar (Docker / SearXNG)
+├── docs/                   # Architecture, audits, change log, issues
+└── src/
+    ├── main.tsx            # SPA bootstrap
+    ├── graph-main.tsx      # Graph-view bootstrap
+    ├── core/               # CPO schema, parsers, engine, validators
+    ├── services/           # LLM, scraper, enrichment, persistence, analytics
+    ├── state/              # Observable store
+    ├── ui/
+    │   ├── App.tsx
+    │   ├── components/     # Reusable widgets (KPI strip, filter bar, …)
+    │   ├── features/       # Dashboard, settings, ecommerce
+    │   ├── hooks/
+    │   └── styles/         # base.css, admin-shell.css, graph.css
+    ├── graph/              # D3-force graph (sim, renderers, components)
+    └── workers/            # CSV import worker
 ```
 
----
+## Tech Stack
 
-*Built with precision for the modern commerce era.*
+React 19 · TypeScript · Vite 7 · Framer Motion · D3-force · Zod · IndexedDB (idb) · `@tanstack/react-virtual` · AOS
+
+## Architecture Highlights
+
+- **CPO v4.0 schema** (`src/core/schema.ts`) — multi-observation product model with consensus aggregation across import / scrape / inference sources.
+- **Observable store** (`src/state/store.ts`) — single source of truth, persists to IndexedDB.
+- **Lazy-loaded views** — Table, Tree, Graph, Compare, and CRM panels split into separate chunks (see `vite.config.js`).
+- **Worker-based CSV import** — heavy parsing runs off the main thread (`src/workers/import.worker.ts`).
+
+See `docs/OVERVIEW.md` and `docs/module-audits/` for deeper dives.

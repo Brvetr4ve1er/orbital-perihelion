@@ -6,7 +6,6 @@
 import * as d3Force from 'd3-force';
 import type {
   Simulation,
-  SimulationNodeDatum,
 } from 'd3-force';
 import type {
   GraphNode,
@@ -181,8 +180,6 @@ export class GraphSimulationEngine {
     // Node radius for collision
     const nodeRadius = (n: GraphNode) =>
       Math.max(4, Math.log1p(n.degree) * 8) * config.collisionMultiplier;
-
-    const forces: d3Force.Force<GraphNode, GraphLink>[] = [];
 
     const linkForce = d3Force.forceLink<GraphNode, GraphLink>(this.links)
       .id((n) => n.id)

@@ -56,9 +56,9 @@ const ProductCardInner = ({ product, onClick, index = 0, inCompare, onToggleComp
 
     // ── Competitor-price delta (if enriched) ──────────────────────────────────
     const priceDelta = useMemo(() => {
-        const cps = (enrich?.competitorPrices || []).map((c: any) => Number(c.price)).filter(n => Number.isFinite(n) && n > 0);
+        const cps = (enrich?.competitorPrices || []).map((c: any) => Number(c.price)).filter((n: number) => Number.isFinite(n) && n > 0);
         if (!cps.length || !retailPrice) return null;
-        const avg = cps.reduce((a, b) => a + b, 0) / cps.length;
+        const avg = cps.reduce((a: number, b: number) => a + b, 0) / cps.length;
         const diff = ((retailPrice - avg) / avg) * 100;
         return { avg, diff, n: cps.length };
     }, [enrich?.competitorPrices, retailPrice]);
@@ -156,7 +156,7 @@ const ProductCardInner = ({ product, onClick, index = 0, inCompare, onToggleComp
                         {velocity?.reorderSignal === 'dead' && (
                             <span className="scan-doc tv-doc-dead">Inactif</span>
                         )}
-                        {analytics?.daily30?.some(v => v > 0) && (
+                        {analytics?.daily30?.some((v: number) => v > 0) && (
                             <div className="scan-spark-wrap">
                                 <Sparkline
                                     values={analytics.daily30}
@@ -195,12 +195,12 @@ const ProductCardInner = ({ product, onClick, index = 0, inCompare, onToggleComp
                         )}
                         {cardLayout.showAIVerdict && intel?.pros && intel.pros.length > 0 && (
                             <div className="scan-pros">
-                                {intel.pros.slice(0, 3).map((p, i) => <span key={i}>✓ {p}</span>)}
+                                {intel.pros.slice(0, 3).map((p: string, i: number) => <span key={i}>✓ {p}</span>)}
                             </div>
                         )}
                         {cardLayout.showAIVerdict && intel?.cons && intel.cons.length > 0 && (
                             <div className="scan-cons">
-                                {intel.cons.slice(0, 2).map((p, i) => <span key={i}>— {p}</span>)}
+                                {intel.cons.slice(0, 2).map((p: string, i: number) => <span key={i}>— {p}</span>)}
                             </div>
                         )}
                         {cardLayout.showMarketIntel && competitorCount > 0 && (

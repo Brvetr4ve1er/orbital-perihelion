@@ -2,7 +2,7 @@
  * RevenueChart — full-width revenue trend chart for the dashboard.
  * Pure SVG with a range selector (30 / 60 / 90 days). No chart library.
  */
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Product } from '../../core/schema';
 import { getRevenueTimeSeries, invalidateAnalyticsCache } from '../../services/analytics';
 import { SalesService } from '../../services/sales';

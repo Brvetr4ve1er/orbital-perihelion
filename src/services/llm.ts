@@ -139,8 +139,8 @@ export const LLMService = {
     },
     savePreset(name: string) {
         const list = this.getPresets().filter(p => p.name !== name);
-        const { url, model } = this.getConfig();
-        list.push({ name, url, model, key: '' });
+        const { url, model, key } = this.getConfig();
+        list.push({ name, url, model, key });
         localStorage.setItem('pkos_llm_presets', JSON.stringify(list));
     },
     deletePreset(name: string) {
@@ -198,7 +198,7 @@ export const LLMService = {
     },
 
     // ── Core LLM call (OpenAI-compat) ──────────────────────────
-    async callLLM(systemPrompt: string, userPrompt: string, jsonMode = false, retryCount = 0): Promise<any> {
+    async callLLM(systemPrompt: string, userPrompt: string, jsonMode = false): Promise<any> {
         this._setStatus('loading');
         const config = this.getConfig();
         

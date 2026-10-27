@@ -60,11 +60,11 @@ class EnrichmentQueueService {
     private _firstFailureAt: number | null = null;
 
     // ── Subscription ──────────────────────────────────────────
-    subscribe(listener: QueueListener) {
+    subscribe(listener: QueueListener): () => void {
         this.listeners.add(listener);
         // Immediately emit current state so the UI doesn't need to call getState()
         listener(this.state);
-        return () => this.listeners.delete(listener);
+        return () => { this.listeners.delete(listener); };
     }
 
     getState(): QueueState {
